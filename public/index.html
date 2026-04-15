@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Elegance Jewelry — Panel</title>
+  <style>
+    body { font-family: sans-serif; display: flex; align-items: center;
+           justify-content: center; height: 100vh; margin: 0;
+           background: #0f172a; color: #94a3b8; }
+    .card { text-align: center; padding: 40px; border: 1px solid #1e293b;
+            border-radius: 12px; }
+    h1 { color: #C9A84C; margin: 0 0 8px; }
+    p  { margin: 0; font-size: 14px; }
+    .status { margin-top: 24px; display: flex; flex-direction: column; gap: 6px; }
+    .ep { background: #1e293b; padding: 6px 16px; border-radius: 6px;
+          font-size: 12px; font-family: monospace; color: #C9A84C; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Elegance Jewelry</h1>
+    <p>Panel Administrativo — API activa</p>
+    <div class="status">
+      <div class="ep">GET  /api/dashboard/resumen</div>
+      <div class="ep">GET  /api/dashboard/pedidos</div>
+      <div class="ep">GET  /api/dashboard/productos</div>
+      <div class="ep">GET  /api/dashboard/clientes</div>
+      <div class="ep">GET  /api/dashboard/temporal</div>
+      <div class="ep">GET  /api/dashboard/analisis</div>
+      <div class="ep">GET  /api/dashboard/entregas</div>
+      <div class="ep">GET  /api/dashboard/historicos</div>
+    </div>
+  </div>
+</body>
+</html>
