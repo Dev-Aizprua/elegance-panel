@@ -2,35 +2,474 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <meta name="theme-color" content="#FFD700">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Panel Admin">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Elegance Jewelry — Panel</title>
-  <style>
-    body { font-family: sans-serif; display: flex; align-items: center;
-           justify-content: center; height: 100vh; margin: 0;
-           background: #0f172a; color: #94a3b8; }
-    .card { text-align: center; padding: 40px; border: 1px solid #1e293b;
-            border-radius: 12px; }
-    h1 { color: #C9A84C; margin: 0 0 8px; }
-    p  { margin: 0; font-size: 14px; }
-    .status { margin-top: 24px; display: flex; flex-direction: column; gap: 6px; }
-    .ep { background: #1e293b; padding: 6px 16px; border-radius: 6px;
-          font-size: 12px; font-family: monospace; color: #C9A84C; }
-  </style>
+  <title>Panel — Elegance Jewelry</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="tema.css">
 </head>
 <body>
-  <div class="card">
-    <h1>Elegance Jewelry</h1>
-    <p>Panel Administrativo — API activa</p>
-    <div class="status">
-      <div class="ep">GET  /api/dashboard/resumen</div>
-      <div class="ep">GET  /api/dashboard/pedidos</div>
-      <div class="ep">GET  /api/dashboard/productos</div>
-      <div class="ep">GET  /api/dashboard/clientes</div>
-      <div class="ep">GET  /api/dashboard/temporal</div>
-      <div class="ep">GET  /api/dashboard/analisis</div>
-      <div class="ep">GET  /api/dashboard/entregas</div>
-      <div class="ep">GET  /api/dashboard/historicos</div>
+
+  <div class="bg-glow"></div>
+  <div class="scan-line"></div>
+
+  <div class="dashboard-container">
+
+    <!-- HEADER -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">
+          <img id="logoEmpresa" src="" alt="Logo" onerror="this.style.display='none'">
+        </div>
+        <div class="header-title">
+          <h1 id="nombreEmpresa">Elegance Jewelry</h1>
+          <p  id="sloganEmpresa">Donde cada pieza cuenta una historia</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="status-indicator">
+          <span class="status-dot"></span>
+          <span>SISTEMA EN LÍNEA</span>
+          <span id="ultimaActualizacion">--</span>
+        </div>
+        <button class="btn btn-primary" onclick="actualizarDatos()">
+          <i class="fas fa-sync-alt"></i> Actualizar
+        </button>
+      </div>
+    </header>
+
+    <!-- NAVEGACIÓN -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="overview"   onclick="cambiarTab('overview')">  <i class="fas fa-chart-line"></i>     Resumen</button>
+      <button class="nav-tab"        data-tab="analisis"   onclick="cambiarTab('analisis')">  <i class="fas fa-chart-bar"></i>      Análisis</button>
+      <button class="nav-tab"        data-tab="inventario" onclick="cambiarTab('inventario')"><i class="fas fa-gem"></i>            Inventario</button>
+      <button class="nav-tab"        data-tab="clientes"   onclick="cambiarTab('clientes')">  <i class="fas fa-users"></i>          Clientes</button>
+      <button class="nav-tab"        data-tab="temporal"   onclick="cambiarTab('temporal')">  <i class="fas fa-calendar-alt"></i>   Temporal</button>
+      <button class="nav-tab"        data-tab="pedidos"    onclick="cambiarTab('pedidos')">   <i class="fas fa-clipboard-list"></i> Pedidos</button>
+      <button class="nav-tab"        data-tab="entregas"   onclick="cambiarTab('entregas')">  <i class="fas fa-truck"></i>          Entregas</button>
+      <button class="nav-tab"        data-tab="historicos" onclick="cambiarTab('historicos')"><i class="fas fa-archive"></i>        Históricos</button>
+    </nav>
+
+    <!-- TAB: RESUMEN -->
+    <div id="tab-overview" class="tab-content active">
+      <div class="filter-bar">
+        <span class="filter-bar-title"><i class="fas fa-filter"></i> Filtrar por:</span>
+        <div class="filter-buttons">
+          <button class="filter-btn active" onclick="aplicarFiltroFecha('todo',   'overview', this)">Todo</button>
+          <button class="filter-btn"        onclick="aplicarFiltroFecha('hoy',    'overview', this)">Hoy</button>
+          <button class="filter-btn"        onclick="aplicarFiltroFecha('semana', 'overview', this)">Esta Semana</button>
+          <button class="filter-btn"        onclick="aplicarFiltroFecha('mes',    'overview', this)">Este Mes</button>
+          <button class="filter-btn"        onclick="aplicarFiltroFecha('anio',   'overview', this)">Este Año</button>
+          <button class="filter-btn"        onclick="toggleRangoFechas('overview')">Rango</button>
+        </div>
+        <div class="filter-date-range" id="rangoFechasOverview">
+          <label>Desde:</label><input type="date" id="fechaInicioOverview">
+          <label>Hasta:</label><input type="date" id="fechaFinOverview">
+          <button class="filter-apply-btn" onclick="aplicarRangoFechas('overview')"><i class="fas fa-check"></i> Aplicar</button>
+        </div>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-header"><div class="kpi-icon"><i class="fas fa-dollar-sign"></i></div><span class="kpi-label">Ventas Brutas</span></div>
+          <div class="kpi-value" id="ventasBruto">$0.00</div><div class="kpi-subtitle">Con impuestos</div>
+        </div>
+        <div class="kpi-card success">
+          <div class="kpi-header"><div class="kpi-icon"><i class="fas fa-receipt"></i></div><span class="kpi-label">Ticket Promedio</span></div>
+          <div class="kpi-value" id="ticketPromedio">$0.00</div><div class="kpi-subtitle">Por pedido</div>
+        </div>
+        <div class="kpi-card warning">
+          <div class="kpi-header"><div class="kpi-icon"><i class="fas fa-box"></i></div><span class="kpi-label">Unidades Vendidas</span></div>
+          <div class="kpi-value" id="volumenProductos">0</div><div class="kpi-subtitle">Productos totales</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-header"><div class="kpi-icon"><i class="fas fa-percent"></i></div><span class="kpi-label">Impuesto (ITBMS)</span></div>
+          <div class="kpi-value" id="totalITBMS">$0.00</div><div class="kpi-subtitle">Recaudado</div>
+        </div>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-header"><div class="kpi-icon"><i class="fas fa-shopping-cart"></i></div><span class="kpi-label">Total Pedidos</span></div>
+          <div class="kpi-value" id="numPedidos">0</div><div class="kpi-subtitle">Registrados</div>
+        </div>
+        <div class="kpi-card success">
+          <div class="kpi-header"><div class="kpi-icon"><i class="fas fa-money-bill-wave"></i></div><span class="kpi-label">Ventas Netas</span></div>
+          <div class="kpi-value" id="ventasNeto">$0.00</div><div class="kpi-subtitle">Sin impuestos</div>
+        </div>
+        <div class="kpi-card success">
+          <div class="kpi-header"><div class="kpi-icon"><i class="fas fa-hand-holding-usd"></i></div><span class="kpi-label">Ganancia Total</span></div>
+          <div class="kpi-value" id="gananciaTotal">$0.00</div><div class="kpi-subtitle">Ingresos - Costos</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-header"><div class="kpi-icon"><i class="fas fa-chart-line"></i></div><span class="kpi-label">Margen Promedio</span></div>
+          <div class="kpi-value" id="margenPromedio">0%</div><div class="kpi-subtitle">Rentabilidad</div>
+        </div>
+      </div>
+      <div class="cards-row">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title"><i class="fas fa-chart-pie"></i> Ventas por Categoría</h3></div>
+          <div class="chart-container"><canvas id="chartCategorias"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3 class="card-title"><i class="fas fa-tasks"></i> Estado de Pedidos</h3></div>
+          <div class="chart-container"><canvas id="chartEstados"></canvas></div>
+          <div class="status-summary">
+            <div class="status-item pendiente"><div class="count" id="pedidosPendientes">0</div><div class="label">Pendiente</div></div>
+            <div class="status-item entregado"><div class="count" id="pedidosEntregados">0</div><div class="label">Entregado</div></div>
+            <div class="status-item cancelado"><div class="count" id="pedidosCancelados">0</div><div class="label">Cancelado</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: ANÁLISIS -->
+    <div id="tab-analisis" class="tab-content">
+      <div class="filter-bar">
+        <span class="filter-bar-title"><i class="fas fa-filter"></i> Filtrar por:</span>
+        <div class="filter-buttons">
+          <button class="filter-btn active" onclick="aplicarFiltroFecha('todo',   'analisis', this)">Todo</button>
+          <button class="filter-btn"        onclick="aplicarFiltroFecha('mes',    'analisis', this)">Este Mes</button>
+          <button class="filter-btn"        onclick="aplicarFiltroFecha('anio',   'analisis', this)">Este Año</button>
+          <button class="filter-btn"        onclick="toggleRangoFechas('analisis')">Rango</button>
+        </div>
+        <div class="filter-date-range" id="rangoFechasAnalisis">
+          <label>Desde:</label><input type="date" id="fechaInicioAnalisis">
+          <label>Hasta:</label><input type="date" id="fechaFinAnalisis">
+          <button class="filter-apply-btn" onclick="aplicarRangoFechas('analisis')"><i class="fas fa-check"></i> Aplicar</button>
+        </div>
+      </div>
+      <div class="cards-row">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title"><i class="fas fa-trophy"></i> Top 5 Productos</h3></div>
+          <div class="chart-container"><canvas id="chartTopProductos"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3 class="card-title"><i class="fas fa-exclamation-triangle"></i> Alerta Stock Bajo</h3></div>
+          <div class="table-container">
+            <table><thead><tr><th>Producto</th><th>Categoría</th><th>Stock</th><th>Estado</th></tr></thead>
+            <tbody id="tablaStockCritico"></tbody></table>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:20px;">
+        <div class="card-header"><h3 class="card-title"><i class="fas fa-tags"></i> Ventas por Categoría</h3></div>
+        <div class="table-container">
+          <table><thead><tr><th>Categoría</th><th>Unidades</th><th>Ingresos</th><th>%</th></tr></thead>
+          <tbody id="tablaVentasCategorias"></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: INVENTARIO -->
+    <div id="tab-inventario" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title"><i class="fas fa-gem"></i> Gestión de Productos</h3>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+            <div class="search-box"><i class="fas fa-search"></i><input type="text" id="buscarProducto" placeholder="Buscar productos..." oninput="filtrarProductos()"></div>
+            <button class="btn btn-primary" onclick="abrirModalProducto()"><i class="fas fa-plus"></i> Nuevo</button>
+            <button class="btn" onclick="exportarProductosExcel()"><i class="fas fa-file-excel"></i> Exportar</button>
+          </div>
+        </div>
+        <div class="products-grid" id="gridProductos"></div>
+      </div>
+    </div>
+
+    <!-- TAB: CLIENTES -->
+    <div id="tab-clientes" class="tab-content">
+      <div class="filter-bar">
+        <span class="filter-bar-title"><i class="fas fa-filter"></i> Filtrar VIP por:</span>
+        <div class="filter-buttons">
+          <button class="filter-btn active" onclick="aplicarFiltroFecha('todo', 'clientes', this)">Todo</button>
+          <button class="filter-btn"        onclick="aplicarFiltroFecha('mes',  'clientes', this)">Este Mes</button>
+          <button class="filter-btn"        onclick="aplicarFiltroFecha('anio', 'clientes', this)">Este Año</button>
+          <button class="filter-btn"        onclick="toggleRangoFechas('clientes')">Rango</button>
+        </div>
+        <div class="filter-date-range" id="rangoFechasClientes">
+          <label>Desde:</label><input type="date" id="fechaInicioClientes">
+          <label>Hasta:</label><input type="date" id="fechaFinClientes">
+          <button class="filter-apply-btn" onclick="aplicarRangoFechas('clientes')"><i class="fas fa-check"></i> Aplicar</button>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><h3 class="card-title"><i class="fas fa-crown"></i> Top 5 Clientes VIP</h3></div>
+        <div class="chart-container"><canvas id="chartClientesVIP"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title"><i class="fas fa-address-book"></i> Base de Datos de Clientes</h3>
+          <div style="display:flex;gap:10px;">
+            <button class="btn btn-success btn-sm" onclick="exportarClientesExcel()"><i class="fas fa-file-excel"></i> Excel</button>
+          </div>
+        </div>
+        <div class="table-container">
+          <table><thead><tr><th>Cliente</th><th>Correo</th><th>Teléfono</th><th>Dirección</th><th>#</th><th>Total</th></tr></thead>
+          <tbody id="tablaClientes"></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: TEMPORAL -->
+    <div id="tab-temporal" class="tab-content">
+      <div class="filter-bar">
+        <span class="filter-bar-title"><i class="fas fa-filter"></i> Filtrar por:</span>
+        <div class="filter-buttons">
+          <button class="filter-btn active" onclick="aplicarFiltroFecha('7dias', 'temporal', this)">Últimos 7 días</button>
+          <button class="filter-btn"        onclick="aplicarFiltroFecha('hoy',   'temporal', this)">Hoy</button>
+          <button class="filter-btn"        onclick="toggleRangoFechas('temporal')">Rango (máx. 30 días)</button>
+        </div>
+        <div class="filter-date-range" id="rangoFechasTemporal">
+          <label>Desde:</label><input type="date" id="fechaInicioTemporal">
+          <label>Hasta:</label><input type="date" id="fechaFinTemporal">
+          <button class="filter-apply-btn" onclick="aplicarRangoFechas('temporal')"><i class="fas fa-check"></i> Aplicar</button>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><h3 class="card-title"><i class="fas fa-chart-bar"></i> Ventas Diarias</h3></div>
+        <div class="chart-container" style="height:350px;"><canvas id="chartVentasDiarias"></canvas></div>
+      </div>
+      <div class="cards-row">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title"><i class="fas fa-hand-holding-usd"></i> Ganancias por Día</h3></div>
+          <div class="chart-container"><canvas id="chartGanancias"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3 class="card-title"><i class="fas fa-percentage"></i> Margen por Día</h3></div>
+          <div class="chart-container"><canvas id="chartMargen"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: PEDIDOS -->
+    <div id="tab-pedidos" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title"><i class="fas fa-clipboard-list"></i> Gestión de Pedidos</h3>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+            <div class="filter-buttons">
+              <button class="filter-btn active" id="filtroTodos"     onclick="filtrarPedidosPorEstado('todos')">Todos</button>
+              <button class="filter-btn"        id="filtroPendiente" onclick="filtrarPedidosPorEstado('Pendiente')">Pendiente</button>
+              <button class="filter-btn"        id="filtroEntregado" onclick="filtrarPedidosPorEstado('Entregado')">Entregado</button>
+              <button class="filter-btn"        id="filtroCancelado" onclick="filtrarPedidosPorEstado('Cancelado')">Cancelado</button>
+            </div>
+            <button class="btn btn-success btn-sm" onclick="exportarPedidosFiltrados()"><i class="fas fa-file-excel"></i> Exportar</button>
+          </div>
+        </div>
+        <div class="filter-bar" style="margin-bottom:0;border-top:none;">
+          <div class="search-box" style="max-width:200px;"><i class="fas fa-hashtag"></i><input type="text" id="buscadorPedidoId" placeholder="Buscar ID..." oninput="buscarPedidos()"></div>
+          <div class="search-box" style="max-width:220px;"><i class="fas fa-user"></i><input type="text" id="buscadorPedidoCliente" placeholder="Buscar cliente..." oninput="buscarPedidos()"></div>
+          <div class="filter-date-range show" style="margin-left:0;padding-left:0;border-left:none;">
+            <label>Desde:</label><input type="date" id="buscadorFechaInicio" onchange="buscarPedidos()">
+            <label>Hasta:</label><input type="date" id="buscadorFechaFin"    onchange="buscarPedidos()">
+          </div>
+          <button class="btn btn-sm" onclick="limpiarBuscadorPedidos()"><i class="fas fa-times"></i> Limpiar</button>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Correo</th><th>Total</th><th>Estado</th><th>Ver</th><th>Acción</th></tr></thead>
+            <tbody id="tablaPedidos"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: ENTREGAS -->
+    <div id="tab-entregas" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title"><i class="fas fa-truck"></i> Entregas Pendientes</h3>
+          <button class="btn btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Imprimir</button>
+        </div>
+        <p style="color:var(--text-dim);margin-bottom:20px;letter-spacing:1px;">
+          <i class="fas fa-info-circle" style="color:var(--primary);"></i>
+          Pedidos pendientes ordenados por antigüedad
+        </p>
+        <div id="listaEntregas"></div>
+      </div>
+    </div>
+
+    <!-- TAB: HISTÓRICOS -->
+    <div id="tab-historicos" class="tab-content">
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <h3 class="card-title"><i class="fas fa-chart-bar"></i> KPIs Comparativos por Año</h3>
+          <button class="btn btn-sm" onclick="cargarHistoricos()"><i class="fas fa-sync-alt"></i> Actualizar</button>
+        </div>
+        <div id="kpiComparativoCards" style="margin-bottom:24px;">
+          <div style="text-align:center;padding:30px;color:var(--text-dim);font-size:12px;letter-spacing:1px;">
+            <i class="fas fa-spinner fa-spin" style="font-size:1.5rem;color:var(--primary);display:block;margin-bottom:10px;"></i>
+            Cargando KPIs...
+          </div>
+        </div>
+        <div class="cards-row">
+          <div class="card">
+            <div class="card-header"><h3 class="card-title"><i class="fas fa-dollar-sign"></i> Ventas por Año</h3></div>
+            <div class="chart-container"><canvas id="chartVentasAnuales"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3 class="card-title"><i class="fas fa-percentage"></i> Margen y Ticket</h3></div>
+            <div class="chart-container"><canvas id="chartMargenTicket"></canvas></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3 class="card-title"><i class="fas fa-archive"></i> Búsqueda en Históricos</h3></div>
+        <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;align-items:center;">
+          <input type="text" id="valorBusquedaHist" class="form-input" placeholder="ID pedido o nombre cliente" style="flex:1;max-width:350px;">
+          <input type="text" id="anioBusqueda"      class="form-input" placeholder="Año (ej: 2025)"             style="width:130px;">
+          <button class="btn btn-primary" onclick="buscarHistoricos()"><i class="fas fa-search"></i> Buscar</button>
+          <button class="btn btn-sm"      onclick="limpiarHistoricos()"><i class="fas fa-times"></i> Limpiar</button>
+        </div>
+        <div id="resultadosHistoricos">
+          <div class="empty-state"><i class="fas fa-archive"></i><p>Usa el buscador para encontrar pedidos archivados</p></div>
+        </div>
+        <div style="margin-top:30px;padding-top:20px;border-top:1px solid var(--border);">
+          <div class="card-header" style="margin-bottom:16px;padding-bottom:0;border:none;">
+            <h3 class="card-title"><i class="fas fa-box-archive"></i> Archivar Pedidos</h3>
+          </div>
+          <p style="color:var(--text-dim);font-size:0.9rem;margin-bottom:16px;">Marca los pedidos del año anterior como archivados. Esta acción no elimina datos.</p>
+          <button class="btn btn-danger" onclick="archivarAnioAnterior()"><i class="fas fa-archive"></i> Archivar Año Anterior</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /dashboard-container -->
+
+  <!-- MODAL: CAMBIO ESTADO -->
+  <div class="modal-overlay" id="modalEstado">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title"><i class="fas fa-edit"></i> CAMBIAR ESTADO</h3>
+        <button class="modal-close" onclick="cerrarModal('modalEstado')"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom:16px;color:var(--text-dim);">Pedido: <strong style="color:var(--primary);" id="idPedidoModal"></strong></p>
+        <div class="form-group">
+          <label class="form-label">Nuevo Estado</label>
+          <select class="form-input" id="nuevoEstado">
+            <option value="Pendiente">Pendiente</option>
+            <option value="Entregado">Entregado</option>
+            <option value="Cancelado">Cancelado</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" onclick="cerrarModal('modalEstado')">Cancelar</button>
+          <button class="btn btn-success" onclick="confirmarCambioEstado()"><i class="fas fa-check"></i> Confirmar</button>
+        </div>
+      </div>
     </div>
   </div>
+
+  <!-- MODAL: PRODUCTO -->
+  <div class="modal-overlay" id="modalProducto">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title" id="tituloModalProducto"><i class="fas fa-gem"></i> NUEVO PRODUCTO</h3>
+        <button class="modal-close" onclick="cerrarModal('modalProducto')"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="modoEdicion" value="crear">
+        <input type="hidden" id="productoIdEdicion" value="">
+        <div class="form-group">
+          <label class="form-label">Nombre del Producto *</label>
+          <input type="text" class="form-input" id="productoNombre" maxlength="70"
+                 oninput="validarSemaforo(this,'countNombre',70,45,60)" placeholder="Nombre del producto">
+          <small id="countNombre" style="display:block;margin-top:6px;font-size:12px;color:#2ecc71;letter-spacing:1px;">0 / 70</small>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Descripción</label>
+          <textarea class="form-input form-textarea" id="productoDescripcion" maxlength="100"
+                    oninput="validarSemaforo(this,'countDesc',100,75,90)" placeholder="Descripción del producto"></textarea>
+          <small id="countDesc" style="display:block;margin-top:6px;font-size:12px;color:#2ecc71;letter-spacing:1px;">0 / 100</small>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">ID Producto</label>
+            <input type="text" class="form-input" id="productoIdInput" placeholder="Auto si vacío">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Categoría</label>
+            <input type="text" class="form-input" id="productoCategoria" placeholder="Ej: Anillos" list="listaCategorias">
+            <datalist id="listaCategorias"></datalist>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Precio Venta ($) *</label>
+            <input type="number" class="form-input" id="productoPrecio" step="0.01" min="0" placeholder="0.00">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Costo ($)</label>
+            <input type="number" class="form-input" id="productoCosto" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">ITBMS %</label>
+            <select class="form-input" id="productoITBMS">
+              <option value="7">7% (Estándar)</option>
+              <option value="0">0% (Exento)</option>
+              <option value="10">10% (Licores)</option>
+              <option value="15">15% (Tabaco)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Stock *</label>
+            <input type="number" class="form-input" id="productoStock" min="0" placeholder="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">URL de Imagen</label>
+          <input type="url" class="form-input" id="productoImagenURL" placeholder="https://res.cloudinary.com/...">
+          <div id="previsualizacion" style="margin-top:12px;display:none;text-align:center;">
+            <img id="imgPreview" style="max-width:260px;max-height:180px;border:2px solid var(--primary);border-radius:4px;">
+          </div>
+          <button type="button" class="btn btn-sm" style="margin-top:8px;" onclick="previsualizarURLImagen()">
+            <i class="fas fa-eye"></i> Vista previa
+          </button>
+        </div>
+        <div class="form-group">
+          <label class="form-checkbox">
+            <input type="checkbox" id="productoDestacado">
+            <span style="color:var(--text);">Producto Destacado</span>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" onclick="cerrarModal('modalProducto')">Cancelar</button>
+          <button class="btn btn-danger" id="btnEliminarProducto" onclick="eliminarProductoConfirm()" style="display:none;"><i class="fas fa-trash"></i> Eliminar</button>
+          <button class="btn btn-success" onclick="guardarProducto()"><i class="fas fa-save"></i> Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: FACTURA -->
+  <div class="modal-overlay" id="modalFactura">
+    <div class="modal" style="max-width:700px;">
+      <div class="modal-header">
+        <h3 class="modal-title"><i class="fas fa-file-invoice"></i> DETALLE DE PEDIDO</h3>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Imprimir</button>
+          <button class="modal-close" onclick="cerrarModal('modalFactura')"><i class="fas fa-times"></i></button>
+        </div>
+      </div>
+      <div class="modal-body" id="facturaContenido"></div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast-container" id="toastContainer"></div>
+  <!-- AUDIO -->
+  <audio id="sonidoCampana" preload="auto">
+    <source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg">
+  </audio>
+
+  <script src="panel.js"></script>
 </body>
 </html>
