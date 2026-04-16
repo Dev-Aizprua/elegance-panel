@@ -36,7 +36,7 @@ async function cargarDatos() {
       cargarAnalisis(),
       cargarProductos(),
       cargarClientes(),
-      cargarTemporal(),
+      // cargarTemporal(), // activar cuando haya datos suficientes
       cargarPedidos(),
       cargarEntregas(),
     ]);
@@ -813,7 +813,7 @@ function recargarSeccion(seccion) {
     case 'overview': cargarOverview(); break;
     case 'analisis': cargarAnalisis(); break;
     case 'clientes': cargarClientes(); break;
-    case 'temporal': cargarTemporal(); break;
+    // case 'temporal': cargarTemporal(); break; // activar cuando haya datos suficientes
   }
 }
 
