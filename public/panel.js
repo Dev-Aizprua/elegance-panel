@@ -464,6 +464,7 @@ function abrirModalProducto() {
   document.getElementById('countDesc').textContent   = '0 / 100';
   document.getElementById('previsualizacion').style.display = 'none';
   document.getElementById('modalProducto').classList.add('active');
+  cargarContadorFotos();
 }
 
 function editarProducto(id) {
@@ -490,6 +491,7 @@ function editarProducto(id) {
     document.getElementById('previsualizacion').style.display = 'block';
   }
   document.getElementById('modalProducto').classList.add('active');
+  cargarContadorFotos();
 }
 
 async function guardarProducto() {
@@ -882,3 +884,120 @@ document.addEventListener('click', e => {
     e.target.classList.remove('active');
   }
 });
+// ══════════════════════════════════════
+// PATCH — Funciones de Cloudinary para el panel
+// ══════════════════════════════════════
+
+// Cargar contador de fotos al abrir el modal
+async function cargarContadorFotos() {
+  try {
+    const res  = await fetch(`${API}/api/cloudinary?carpeta=minegocio`);
+    const data = await res.json();
+    if (!data.success) return;
+
+    const total    = data.total;
+    const limite   = data.limite;
+    const pct      = Math.round((total / limite) * 100);
+    const barColor = pct >= 80 ? 'var(--danger)' : pct >= 60 ? 'var(--warning)' : 'var(--success)';
+
+    document.getElementById('barraFotos').style.display    = 'block';
+    document.getElementById('contadorFotos').textContent   = `${total}/${limite}`;
+    document.getElementById('progresoFotos').style.width   = pct + '%';
+    document.getElementById('progresoFotos').style.background = barColor;
+
+    const msg = pct >= 80 ? '⚠️ Espacio casi lleno' : pct >= 60 ? 'Considera limpiar fotos antiguas' : 'Espacio disponible';
+    document.getElementById('mensajeFotos').textContent = msg;
+  } catch(e) {
+    console.log('Error contador fotos:', e);
+  }
+}
+
+// Subir imagen a Cloudinary desde el panel
+async function subirImagenCloudinary() {
+  const input = document.getElementById('productoImagenFile');
+  if (!input || !input.files || !input.files[0]) {
+    mostrarToast('Selecciona una imagen primero', 'warning');
+    return;
+  }
+
+  const file = input.files[0];
+
+  // Validar tamaño y tipo en el cliente
+  if (file.size > 10 * 1024 * 1024) {
+    mostrarToast('La imagen supera 10MB', 'error'); return;
+  }
+  if (!['image/jpeg','image/jpg','image/png','image/webp'].includes(file.type)) {
+    mostrarToast('Formato no permitido. Usa JPG, PNG o WEBP', 'error'); return;
+  }
+
+  // Mostrar barra de progreso
+  const progressDiv  = document.getElementById('uploadProgress');
+  const progressBar  = document.getElementById('progressBar');
+  const progressText = document.getElementById('progressText');
+  progressDiv.style.display = 'block';
+
+  // Simular progreso mientras sube
+  let pct = 0;
+  const timer = setInterval(() => {
+    pct = Math.min(pct + 8, 85);
+    progressBar.style.width  = pct + '%';
+    progressText.textContent = pct + '%';
+  }, 200);
+
+  try {
+    const formData = new FormData();
+    formData.append('file',    file);
+    formData.append('carpeta', 'minegocio');
+
+    const res  = await fetch(`${API}/api/cloudinary`, {
+      method: 'POST',
+      body:   formData,
+    });
+    const data = await res.json();
+
+    clearInterval(timer);
+
+    if (data.success) {
+      progressBar.style.width  = '100%';
+      progressText.textContent = '100%';
+
+      // Poner la URL en el campo de URL
+      document.getElementById('productoImagenURL').value = data.url;
+
+      // Mostrar preview
+      document.getElementById('imgPreview').src             = data.url;
+      document.getElementById('previsualizacion').style.display = 'block';
+
+      mostrarToast('Imagen subida ✅', 'success');
+      cargarContadorFotos();
+
+      setTimeout(() => { progressDiv.style.display = 'none'; }, 1500);
+    } else {
+      mostrarToast('Error: ' + data.error, 'error');
+      progressDiv.style.display = 'none';
+    }
+  } catch(e) {
+    clearInterval(timer);
+    mostrarToast('Error de conexión al subir imagen', 'error');
+    progressDiv.style.display = 'none';
+  }
+}
+
+// Vista previa al seleccionar archivo
+function previsualizarImagen(input) {
+  if (!input.files || !input.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('imgPreview').src             = e.target.result;
+    document.getElementById('previsualizacion').style.display = 'block';
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+
+// Vista previa de URL manual
+function previsualizarURLImagen() {
+  const url = document.getElementById('productoImagenURL').value.trim();
+  if (!url) return;
+  document.getElementById('imgPreview').src             = url;
+  document.getElementById('previsualizacion').style.display = 'block';
+}
