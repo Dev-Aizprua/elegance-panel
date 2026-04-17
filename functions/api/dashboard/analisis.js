@@ -1,5 +1,5 @@
 // functions/api/dashboard/analisis.js
-// Top 5 productos, stock crítico, ventas por categoría
+// FIX: usa created_at en lugar de fecha
 
 export async function onRequestGet(context) {
   const { env, request } = context;
@@ -9,18 +9,9 @@ export async function onRequestGet(context) {
   const hasta  = url.searchParams.get('hasta')  || '';
 
   try {
-    const hoy = new Date();
-    const pad = n => String(n).padStart(2,'0');
-    const fmtDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-
     let wherePedidos = "WHERE p.estado != 'Cancelado'";
-    if (filtro === 'mes') {
-      const ini = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-      wherePedidos += ` AND substr(p.fecha,7,4)||'-'||substr(p.fecha,1,2)||'-'||substr(p.fecha,4,2) >= '${fmtDate(ini)}'`;
-    } else if (filtro === 'anio') {
-      wherePedidos += ` AND substr(p.fecha,7,4) = '${hoy.getFullYear()}'`;
-    } else if (filtro === 'rango' && desde && hasta) {
-      wherePedidos += ` AND substr(p.fecha,7,4)||'-'||substr(p.fecha,1,2)||'-'||substr(p.fecha,4,2) BETWEEN '${desde}' AND '${hasta}'`;
+    if (filtro === 'rango' && desde && hasta) {
+      wherePedidos += ` AND date(p.created_at) >= '${desde}' AND date(p.created_at) <= '${hasta}'`;
     }
 
     // Top 5 productos más vendidos
@@ -28,7 +19,7 @@ export async function onRequestGet(context) {
       SELECT
         dp.id_producto,
         dp.nombre_producto,
-        SUM(dp.cantidad)         AS unidades,
+        SUM(dp.cantidad)          AS unidades,
         ROUND(SUM(dp.subtotal),2) AS ingresos
       FROM detalle_pedidos dp
       JOIN pedidos p ON p.id_pedido = dp.id_pedido
@@ -38,7 +29,7 @@ export async function onRequestGet(context) {
       LIMIT 5
     `).all();
 
-    // Stock crítico y bajo
+    // Stock crítico y bajo — sin filtro de fecha
     const { results: stock } = await env.elegance_db.prepare(`
       SELECT id, nombre, categoria, stock,
         CASE
@@ -59,21 +50,22 @@ export async function onRequestGet(context) {
         ROUND(SUM(dp.subtotal), 2)             AS ingresos
       FROM detalle_pedidos dp
       JOIN pedidos p         ON p.id_pedido = dp.id_pedido
-      LEFT JOIN productos pr ON pr.id = dp.id_producto
+      LEFT JOIN productos pr ON pr.id       = dp.id_producto
       ${wherePedidos}
       GROUP BY pr.categoria
       ORDER BY ingresos DESC
     `).all();
 
-    // Total para porcentajes
     const totalIngresos = categorias.reduce((s, c) => s + c.ingresos, 0);
     const categoriasConPct = categorias.map(c => ({
       ...c,
-      porcentaje: totalIngresos > 0 ? Math.round((c.ingresos / totalIngresos) * 1000) / 10 : 0,
+      porcentaje: totalIngresos > 0
+        ? Math.round((c.ingresos / totalIngresos) * 1000) / 10
+        : 0,
     }));
 
     return Response.json({
-      success: true,
+      success:        true,
       top5_productos: top5,
       stock_alertas:  stock,
       categorias:     categoriasConPct,

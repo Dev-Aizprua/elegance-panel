@@ -1,6 +1,5 @@
 // functions/api/dashboard/pedidos.js
-// GET: listar pedidos con filtros
-// PATCH: cambiar estado (ajusta inventario automáticamente)
+// FIX: usa created_at en lugar de fecha para filtros de rango
 
 export async function onRequestGet(context) {
   const { env, request } = context;
@@ -15,7 +14,7 @@ export async function onRequestGet(context) {
     if (estado !== 'todos') where += ` AND p.estado = '${estado}'`;
     if (buscar) where += ` AND (p.id_pedido LIKE '%${buscar}%' OR p.cliente_nombre LIKE '%${buscar}%')`;
     if (desde && hasta) {
-      where += ` AND substr(p.fecha,7,4)||'-'||substr(p.fecha,1,2)||'-'||substr(p.fecha,4,2) BETWEEN '${desde}' AND '${hasta}'`;
+      where += ` AND date(p.created_at) >= '${desde}' AND date(p.created_at) <= '${hasta}'`;
     }
 
     const { results } = await env.elegance_db.prepare(`
@@ -62,7 +61,6 @@ export async function onRequestPatch(context) {
       return Response.json({ success: false, error: 'Estado inválido' }, { status: 400 });
     }
 
-    // Estado actual del pedido
     const pedido = await env.elegance_db
       .prepare('SELECT estado FROM pedidos WHERE id_pedido = ?')
       .bind(id_pedido)
@@ -77,7 +75,6 @@ export async function onRequestPatch(context) {
       return Response.json({ success: true, mensaje: 'Sin cambios' });
     }
 
-    // Obtener detalle para ajustar inventario
     const { results: detalle } = await env.elegance_db
       .prepare('SELECT id_producto, cantidad FROM detalle_pedidos WHERE id_pedido = ?')
       .bind(id_pedido)
@@ -85,22 +82,12 @@ export async function onRequestPatch(context) {
 
     const stmts = [];
 
-    // Lógica de inventario según cambio de estado
-    // Cancelado → Entregado : descontar stock
-    // Entregado → Cancelado : restaurar stock
-    // Pendiente → Cancelado : restaurar stock
-    // Cancelado → Pendiente : descontar stock
-    // Pendiente → Entregado : descontar stock (ya se descontó al crear, no hacer nada)
-    // Entregado → Pendiente : restaurar stock
-
-    let ajuste = 0; // +1 restaurar, -1 descontar, 0 nada
-
+    let ajuste = 0;
     if (estado_anterior === 'Cancelado' && nuevo_estado === 'Entregado')  ajuste = -1;
     if (estado_anterior === 'Cancelado' && nuevo_estado === 'Pendiente')  ajuste = -1;
     if (estado_anterior === 'Entregado' && nuevo_estado === 'Cancelado')  ajuste = +1;
     if (estado_anterior === 'Entregado' && nuevo_estado === 'Pendiente')  ajuste = +1;
     if (estado_anterior === 'Pendiente' && nuevo_estado === 'Cancelado')  ajuste = +1;
-    // Pendiente → Entregado: stock ya descontado al crear el pedido, no tocar
 
     if (ajuste !== 0) {
       for (const item of detalle) {
@@ -112,7 +99,6 @@ export async function onRequestPatch(context) {
       }
     }
 
-    // Actualizar estado
     stmts.push(
       env.elegance_db
         .prepare('UPDATE pedidos SET estado = ? WHERE id_pedido = ?')

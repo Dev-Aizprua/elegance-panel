@@ -1,5 +1,5 @@
 // functions/api/dashboard/clientes.js
-// Top 5 VIP + base completa de clientes
+// FIX: usa created_at en lugar de fecha
 
 export async function onRequestGet(context) {
   const { env, request } = context;
@@ -10,32 +10,19 @@ export async function onRequestGet(context) {
 
   try {
     let where = "WHERE p.estado != 'Cancelado'";
-    const hoy = new Date();
-    const pad = n => String(n).padStart(2,'0');
-    const fmtDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-
-    if (filtro === 'hoy') {
-      const f = fmtDate(hoy);
-      where += ` AND substr(p.fecha,7,4)||'-'||substr(p.fecha,1,2)||'-'||substr(p.fecha,4,2) = '${f}'`;
-    } else if (filtro === 'mes') {
-      const ini = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-      where += ` AND substr(p.fecha,7,4)||'-'||substr(p.fecha,1,2)||'-'||substr(p.fecha,4,2) >= '${fmtDate(ini)}'`;
-    } else if (filtro === 'anio') {
-      where += ` AND substr(p.fecha,7,4) = '${hoy.getFullYear()}'`;
-    } else if (filtro === 'rango' && desde && hasta) {
-      where += ` AND substr(p.fecha,7,4)||'-'||substr(p.fecha,1,2)||'-'||substr(p.fecha,4,2) BETWEEN '${desde}' AND '${hasta}'`;
+    if (filtro === 'rango' && desde && hasta) {
+      where += ` AND date(p.created_at) >= '${desde}' AND date(p.created_at) <= '${hasta}'`;
     }
 
-    // Todos los clientes agrupados
     const { results: clientes } = await env.elegance_db.prepare(`
       SELECT
-        cliente_nombre                        AS nombre,
-        cliente_email                         AS email,
-        cliente_tel                           AS telefono,
+        cliente_nombre                       AS nombre,
+        cliente_email                        AS email,
+        cliente_tel                          AS telefono,
         direccion,
-        COUNT(*)                              AS total_pedidos,
-        ROUND(SUM(total), 2)                  AS total_gastado,
-        MAX(fecha)                            AS ultimo_pedido
+        COUNT(*)                             AS total_pedidos,
+        ROUND(SUM(total), 2)                 AS total_gastado,
+        MAX(fecha)                           AS ultimo_pedido
       FROM pedidos p
       ${where}
       GROUP BY cliente_email

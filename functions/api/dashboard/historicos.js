@@ -1,5 +1,5 @@
 // functions/api/dashboard/historicos.js
-// KPIs comparativos por año + búsqueda en pedidos archivados
+// FIX: usa created_at en lugar de fecha
 
 export async function onRequestGet(context) {
   const { env, request } = context;
@@ -8,10 +8,10 @@ export async function onRequestGet(context) {
   const anio   = url.searchParams.get('anio')   || '';
 
   try {
-    // KPIs por año
+    // KPIs por año usando created_at
     const { results: kpisPorAnio } = await env.elegance_db.prepare(`
       SELECT
-        substr(p.fecha,7,4)                                                        AS anio,
+        strftime('%Y', p.created_at)                                               AS anio,
         COUNT(DISTINCT p.id_pedido)                                                AS total_pedidos,
         ROUND(SUM(p.total), 2)                                                     AS ventas_brutas,
         ROUND(SUM(p.subtotal), 2)                                                  AS ventas_netas,
@@ -23,7 +23,7 @@ export async function onRequestGet(context) {
         , 1)                                                                       AS margen
       FROM pedidos p
       JOIN detalle_pedidos dp ON dp.id_pedido = p.id_pedido
-      LEFT JOIN productos pr  ON pr.id = dp.id_producto
+      LEFT JOIN productos pr  ON pr.id        = dp.id_producto
       WHERE p.estado != 'Cancelado' AND p.archivado = 1
       GROUP BY anio
       ORDER BY anio DESC
@@ -34,7 +34,7 @@ export async function onRequestGet(context) {
     if (buscar || anio) {
       let where = "WHERE p.archivado = 1";
       if (buscar) where += ` AND (p.id_pedido LIKE '%${buscar}%' OR p.cliente_nombre LIKE '%${buscar}%')`;
-      if (anio)   where += ` AND substr(p.fecha,7,4) = '${anio}'`;
+      if (anio)   where += ` AND strftime('%Y', p.created_at) = '${anio}'`;
 
       const { results } = await env.elegance_db.prepare(`
         SELECT p.*,
@@ -47,7 +47,7 @@ export async function onRequestGet(context) {
         LEFT JOIN detalle_pedidos dp ON dp.id_pedido = p.id_pedido
         ${where}
         GROUP BY p.id_pedido
-        ORDER BY p.fecha DESC
+        ORDER BY p.created_at DESC
         LIMIT 100
       `).all();
 
@@ -58,7 +58,7 @@ export async function onRequestGet(context) {
     }
 
     return Response.json({
-      success: true,
+      success:       true,
       kpis_por_anio: kpisPorAnio,
       pedidos:       pedidosArch,
     });
@@ -67,7 +67,6 @@ export async function onRequestGet(context) {
   }
 }
 
-// Archivar pedidos del año anterior (equivalente al cierre anual)
 export async function onRequestPost(context) {
   const { env, request } = context;
 
@@ -77,13 +76,12 @@ export async function onRequestPost(context) {
 
     const result = await env.elegance_db.prepare(`
       UPDATE pedidos SET archivado = 1
-      WHERE substr(fecha,7,4) = ? AND archivado = 0
+      WHERE strftime('%Y', created_at) = ? AND archivado = 0
     `).bind(String(anioArchivar)).run();
 
-    // Guardar snapshot
     const kpis = await env.elegance_db.prepare(`
-      SELECT COUNT(*) AS total, ROUND(SUM(total),2) AS ventas, ROUND(SUM(subtotal),2) AS netas
-      FROM pedidos WHERE substr(fecha,7,4) = ? AND estado != 'Cancelado'
+      SELECT COUNT(*) AS total, ROUND(SUM(total),2) AS ventas
+      FROM pedidos WHERE strftime('%Y', created_at) = ? AND estado != 'Cancelado'
     `).bind(String(anioArchivar)).first();
 
     await env.elegance_db.prepare(`
@@ -91,15 +89,15 @@ export async function onRequestPost(context) {
       VALUES (?, ?, ?, ?)
     `).bind(
       new Date().toISOString().split('T')[0],
-      kpis.total || 0,
+      kpis.total  || 0,
       kpis.ventas || 0,
       `Cierre anual ${anioArchivar}`
     ).run();
 
     return Response.json({
-      success: true,
+      success:    true,
       archivados: result.meta?.changes || 0,
-      anio: anioArchivar,
+      anio:       anioArchivar,
     });
   } catch (err) {
     return Response.json({ success: false, error: err.message }, { status: 500 });
