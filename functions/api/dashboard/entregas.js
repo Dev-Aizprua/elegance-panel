@@ -1,5 +1,6 @@
 // functions/api/dashboard/entregas.js
-// Pedidos pendientes ordenados por antigüedad con indicador de urgencia
+// Pedidos pendientes con indicador de urgencia
+// FIX: días calculados en hora Panamá (UTC-5)
 
 export async function onRequestGet(context) {
   const { env } = context;
@@ -20,16 +21,29 @@ export async function onRequestGet(context) {
       ORDER BY p.created_at ASC
     `).all();
 
-    // Calcular días pendiente y nivel de urgencia
-    const hoy = new Date();
+    // Hora actual en Panamá (UTC-5)
+    const ahoraUTC    = Date.now();
+    const ahoraPanama = new Date(ahoraUTC - (5 * 60 * 60 * 1000));
+
     const entregas = results.map(p => {
-      const creado  = new Date(p.created_at);
-      const dias    = Math.floor((hoy - creado) / (1000 * 60 * 60 * 24));
+      // created_at viene como "2026-04-17 13:54:11" (UTC del servidor)
+      // Lo convertimos a hora Panamá restando 5 horas
+      const creadoUTC    = new Date(p.created_at.replace(' ', 'T') + 'Z');
+      const creadoPanama = new Date(creadoUTC.getTime() - (5 * 60 * 60 * 1000));
+
+      // Días completos transcurridos en hora Panamá
+      const hoyPanama   = new Date(ahoraPanama);
+      hoyPanama.setHours(0, 0, 0, 0);
+      const diaCreacion = new Date(creadoPanama);
+      diaCreacion.setHours(0, 0, 0, 0);
+
+      const dias = Math.floor((hoyPanama - diaCreacion) / (1000 * 60 * 60 * 24));
+
       return {
         ...p,
-        detalle:  JSON.parse(p.detalle || '[]'),
+        detalle:        JSON.parse(p.detalle || '[]'),
         dias_pendiente: dias,
-        urgente:  dias >= 3,
+        urgente:        dias >= 3,
       };
     });
 
