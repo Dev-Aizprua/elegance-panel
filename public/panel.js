@@ -464,6 +464,7 @@ function abrirModalProducto() {
   document.getElementById('countDesc').textContent   = '0 / 100';
   document.getElementById('previsualizacion').style.display = 'none';
   document.getElementById('modalProducto').classList.add('active');
+  cargarContadorFotos();
 }
 
 function editarProducto(id) {
@@ -490,6 +491,7 @@ function editarProducto(id) {
     document.getElementById('previsualizacion').style.display = 'block';
   }
   document.getElementById('modalProducto').classList.add('active');
+  cargarContadorFotos();
 }
 
 async function guardarProducto() {
@@ -911,3 +913,136 @@ document.addEventListener('click', e => {
     e.target.classList.remove('active');
   }
 });
+
+// ══════════════════════════════════════
+// CLOUDINARY — Subida de imágenes
+// ══════════════════════════════════════
+
+async function cargarContadorFotos() {
+  try {
+    const res  = await fetch(`${API}/api/cloudinary?carpeta=minegocio`);
+    const data = await res.json();
+    if (!data.success) return;
+
+    const total    = data.total  || 0;
+    const limite   = data.limite || 200;
+    const pct      = Math.round((total / limite) * 100);
+    const barColor = pct >= 80 ? 'var(--danger)' : pct >= 60 ? 'var(--warning)' : 'var(--success)';
+
+    const barra = document.getElementById('barraFotos');
+    if (barra) barra.style.display = 'block';
+
+    const contador = document.getElementById('contadorFotos');
+    if (contador) contador.textContent = `${total}/${limite}`;
+
+    const progreso = document.getElementById('progresoFotos');
+    if (progreso) {
+      progreso.style.width      = pct + '%';
+      progreso.style.background = barColor;
+    }
+
+    const msg = document.getElementById('mensajeFotos');
+    if (msg) {
+      msg.textContent = pct >= 80
+        ? '⚠️ Espacio casi lleno'
+        : pct >= 60
+          ? 'Considera limpiar fotos antiguas'
+          : 'Espacio disponible';
+    }
+  } catch(e) {
+    console.log('Error contador fotos:', e);
+  }
+}
+
+function previsualizarImagen(input) {
+  if (!input || !input.files || !input.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = document.getElementById('imgPreview');
+    const div = document.getElementById('previsualizacion');
+    if (img) img.src = e.target.result;
+    if (div) div.style.display = 'block';
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+
+function previsualizarURLImagen() {
+  const url = document.getElementById('productoImagenURL')?.value.trim();
+  if (!url) return;
+  const img = document.getElementById('imgPreview');
+  const div = document.getElementById('previsualizacion');
+  if (img) img.src = url;
+  if (div) div.style.display = 'block';
+}
+
+async function subirImagenCloudinary() {
+  const input = document.getElementById('productoImagenFile');
+  if (!input || !input.files || !input.files[0]) {
+    mostrarToast('Selecciona una imagen primero', 'warning');
+    return;
+  }
+
+  const file = input.files[0];
+
+  if (file.size > 10 * 1024 * 1024) {
+    mostrarToast('La imagen supera 10MB', 'error');
+    return;
+  }
+  if (!['image/jpeg','image/jpg','image/png','image/webp'].includes(file.type)) {
+    mostrarToast('Formato no permitido. Usa JPG, PNG o WEBP', 'error');
+    return;
+  }
+
+  const progressDiv  = document.getElementById('uploadProgress');
+  const progressBar  = document.getElementById('progressBar');
+  const progressText = document.getElementById('progressText');
+  if (progressDiv) progressDiv.style.display = 'block';
+
+  let pct = 0;
+  const timer = setInterval(() => {
+    pct = Math.min(pct + 8, 85);
+    if (progressBar)  progressBar.style.width    = pct + '%';
+    if (progressText) progressText.textContent   = pct + '%';
+  }, 200);
+
+  try {
+    const formData = new FormData();
+    formData.append('file',    file);
+    formData.append('carpeta', 'minegocio');
+
+    const res  = await fetch(`${API}/api/cloudinary`, {
+      method: 'POST',
+      body:   formData,
+    });
+    const data = await res.json();
+
+    clearInterval(timer);
+
+    if (data.success) {
+      if (progressBar)  progressBar.style.width    = '100%';
+      if (progressText) progressText.textContent   = '100%';
+
+      const urlInput = document.getElementById('productoImagenURL');
+      const img      = document.getElementById('imgPreview');
+      const div      = document.getElementById('previsualizacion');
+
+      if (urlInput) urlInput.value       = data.url;
+      if (img)      img.src              = data.url;
+      if (div)      div.style.display    = 'block';
+
+      mostrarToast('Imagen subida ✅', 'success');
+      cargarContadorFotos();
+
+      setTimeout(() => {
+        if (progressDiv) progressDiv.style.display = 'none';
+      }, 1500);
+    } else {
+      mostrarToast('Error: ' + (data.error || 'Error desconocido'), 'error');
+      if (progressDiv) progressDiv.style.display = 'none';
+    }
+  } catch(e) {
+    clearInterval(timer);
+    mostrarToast('Error de conexión al subir imagen', 'error');
+    if (progressDiv) progressDiv.style.display = 'none';
+  }
+}
