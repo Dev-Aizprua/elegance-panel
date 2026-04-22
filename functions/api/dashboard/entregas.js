@@ -16,7 +16,7 @@ export async function onRequestGet(context) {
         )) AS detalle
       FROM pedidos p
       LEFT JOIN detalle_pedidos dp ON dp.id_pedido = p.id_pedido
-      WHERE p.estado = 'Pendiente' AND p.archivado = 0
+      WHERE p.archivado = 0
       GROUP BY p.id_pedido
       ORDER BY p.created_at ASC
     `).all();
