@@ -1,17 +1,42 @@
+// ============================================================
 // functions/api/dashboard/pedidos.js
-// FIX: usa created_at en lugar de fecha para filtros de rango
+// PANEL — elegance-panel
+// GET   → listar pedidos con filtros (estado_pago, fechas)
+// PATCH → aprobar o cancelar pedido
+// ============================================================
 
+async function validarToken(token, env) {
+  if (!token) return false;
+  try {
+    const { results } = await env.elegance_db.prepare(
+      "SELECT token, expires_at FROM admin_sessions WHERE token = ?"
+    ).bind(token).all();
+    if (!results.length) return false;
+    if (new Date() > new Date(results[0].expires_at)) return false;
+    return true;
+  } catch (e) { return false; }
+}
+
+// ── GET — Listar pedidos ───────────────────────────────────
 export async function onRequestGet(context) {
   const { env, request } = context;
-  const url    = new URL(request.url);
-  const estado = url.searchParams.get('estado') || 'todos';
-  const buscar = url.searchParams.get('buscar') || '';
-  const desde  = url.searchParams.get('desde')  || '';
-  const hasta  = url.searchParams.get('hasta')  || '';
+  const url         = new URL(request.url);
+  const authToken   = request.headers.get('Authorization')?.replace('Bearer ', '') ||
+                      url.searchParams.get('token');
+  const estado_pago = url.searchParams.get('estado_pago') || 'todos';
+  const estado      = url.searchParams.get('estado')      || 'todos';
+  const buscar      = url.searchParams.get('buscar')      || '';
+  const desde       = url.searchParams.get('desde')       || '';
+  const hasta       = url.searchParams.get('hasta')       || '';
+
+  if (!await validarToken(authToken, env)) {
+    return Response.json({ success: false, error: 'No autorizado' }, { status: 401 });
+  }
 
   try {
-    let where = "WHERE p.archivado = 0";
-    if (estado !== 'todos') where += ` AND p.estado = '${estado}'`;
+    let where = 'WHERE p.archivado = 0';
+    if (estado_pago !== 'todos') where += ` AND p.estado_pago = '${estado_pago}'`;
+    if (estado      !== 'todos') where += ` AND p.estado = '${estado}'`;
     if (buscar) where += ` AND (p.id_pedido LIKE '%${buscar}%' OR p.cliente_nombre LIKE '%${buscar}%')`;
     if (desde && hasta) {
       where += ` AND date(p.created_at) >= '${desde}' AND date(p.created_at) <= '${hasta}'`;
@@ -38,76 +63,142 @@ export async function onRequestGet(context) {
 
     const pedidos = results.map(p => ({
       ...p,
-      detalle: JSON.parse(p.detalle || '[]'),
+      detalle:    JSON.parse(p.detalle    || '[]'),
+      datos_pago: JSON.parse(p.datos_pago || '{}'),
     }));
 
-    return Response.json({ success: true, pedidos });
+    // Contadores por estado_pago para badges del panel
+    const { results: contadores } = await env.elegance_db.prepare(`
+      SELECT estado_pago, COUNT(*) AS n
+      FROM pedidos WHERE archivado = 0
+      GROUP BY estado_pago
+    `).all();
+
+    return Response.json({ success: true, pedidos, contadores });
+
   } catch (err) {
     return Response.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
+// ── PATCH — Aprobar o Cancelar ─────────────────────────────
 export async function onRequestPatch(context) {
   const { env, request } = context;
+  const url       = new URL(request.url);
+  const authToken = request.headers.get('Authorization')?.replace('Bearer ', '') ||
+                    url.searchParams.get('token');
+
+  if (!await validarToken(authToken, env)) {
+    return Response.json({ success: false, error: 'No autorizado' }, { status: 401 });
+  }
 
   try {
-    const { id_pedido, nuevo_estado } = await request.json();
-    if (!id_pedido || !nuevo_estado) {
-      return Response.json({ success: false, error: 'Faltan datos' }, { status: 400 });
+    const { id_pedido, accion, nuevo_estado } = await request.json();
+
+    if (!id_pedido) {
+      return Response.json({ success: false, error: 'id_pedido requerido' }, { status: 400 });
     }
 
-    const estados_validos = ['Pendiente', 'Entregado', 'Cancelado'];
-    if (!estados_validos.includes(nuevo_estado)) {
-      return Response.json({ success: false, error: 'Estado inválido' }, { status: 400 });
+    // ── APROBAR ─────────────────────────────────────────────
+    if (accion === 'aprobar') {
+      await env.elegance_db.prepare(`
+        UPDATE pedidos
+        SET estado_pago = 'aprobado',
+            estado = 'Pendiente',
+            aprobado_at = datetime('now')
+        WHERE id_pedido = ?
+      `).bind(id_pedido).run();
+
+      return Response.json({ success: true, estado_pago: 'aprobado' });
     }
 
-    const pedido = await env.elegance_db
-      .prepare('SELECT estado FROM pedidos WHERE id_pedido = ?')
-      .bind(id_pedido)
-      .first();
+    // ── CANCELAR (devuelve stock) ────────────────────────────
+    if (accion === 'cancelar') {
+      const pedido = await env.elegance_db.prepare(
+        "SELECT estado_pago FROM pedidos WHERE id_pedido = ?"
+      ).bind(id_pedido).first();
 
-    if (!pedido) {
-      return Response.json({ success: false, error: 'Pedido no encontrado' }, { status: 404 });
-    }
-
-    const estado_anterior = pedido.estado;
-    if (estado_anterior === nuevo_estado) {
-      return Response.json({ success: true, mensaje: 'Sin cambios' });
-    }
-
-    const { results: detalle } = await env.elegance_db
-      .prepare('SELECT id_producto, cantidad FROM detalle_pedidos WHERE id_pedido = ?')
-      .bind(id_pedido)
-      .all();
-
-    const stmts = [];
-
-    let ajuste = 0;
-    if (estado_anterior === 'Cancelado' && nuevo_estado === 'Entregado')  ajuste = -1;
-    if (estado_anterior === 'Cancelado' && nuevo_estado === 'Pendiente')  ajuste = -1;
-    if (estado_anterior === 'Entregado' && nuevo_estado === 'Cancelado')  ajuste = +1;
-    if (estado_anterior === 'Entregado' && nuevo_estado === 'Pendiente')  ajuste = +1;
-    if (estado_anterior === 'Pendiente' && nuevo_estado === 'Cancelado')  ajuste = +1;
-
-    if (ajuste !== 0) {
-      for (const item of detalle) {
-        stmts.push(
-          env.elegance_db
-            .prepare('UPDATE productos SET stock = stock + ? WHERE id = ?')
-            .bind(ajuste * item.cantidad, item.id_producto)
-        );
+      if (!pedido) {
+        return Response.json({ success: false, error: 'Pedido no encontrado' }, { status: 404 });
       }
+
+      // Obtener detalle para restaurar stock
+      const { results: detalle } = await env.elegance_db.prepare(
+        'SELECT id_producto, cantidad FROM detalle_pedidos WHERE id_pedido = ?'
+      ).bind(id_pedido).all();
+
+      const stmts = [];
+
+      // Restaurar stock si el pedido estaba pendiente (el stock ya fue descontado)
+      if (pedido.estado_pago === 'pendiente') {
+        for (const item of detalle) {
+          stmts.push(
+            env.elegance_db.prepare(
+              'UPDATE productos SET stock = stock + ? WHERE id = ?'
+            ).bind(item.cantidad, item.id_producto)
+          );
+        }
+      }
+
+      // Cancelar pedido
+      stmts.push(
+        env.elegance_db.prepare(`
+          UPDATE pedidos
+          SET estado_pago = 'cancelado',
+              estado = 'Cancelado',
+              cancelado_at = datetime('now')
+          WHERE id_pedido = ?
+        `).bind(id_pedido)
+      );
+
+      await env.elegance_db.batch(stmts);
+      return Response.json({ success: true, estado_pago: 'cancelado' });
     }
 
-    stmts.push(
-      env.elegance_db
-        .prepare('UPDATE pedidos SET estado = ? WHERE id_pedido = ?')
-        .bind(nuevo_estado, id_pedido)
-    );
+    // ── CAMBIO DE ESTADO NORMAL (Pendiente/Entregado) ────────
+    if (nuevo_estado && ['Pendiente', 'Entregado', 'Cancelado'].includes(nuevo_estado)) {
+      const pedido = await env.elegance_db.prepare(
+        'SELECT estado, estado_pago FROM pedidos WHERE id_pedido = ?'
+      ).bind(id_pedido).first();
 
-    await env.elegance_db.batch(stmts);
+      if (!pedido) {
+        return Response.json({ success: false, error: 'Pedido no encontrado' }, { status: 404 });
+      }
 
-    return Response.json({ success: true, id_pedido, estado: nuevo_estado });
+      const stmts = [];
+      const estado_anterior = pedido.estado;
+
+      // Ajuste de stock según cambio de estado
+      let ajuste = 0;
+      if (estado_anterior === 'Cancelado' && nuevo_estado !== 'Cancelado') ajuste = -1;
+      if (estado_anterior !== 'Cancelado' && nuevo_estado === 'Cancelado')  ajuste = +1;
+
+      if (ajuste !== 0) {
+        const { results: detalle } = await env.elegance_db.prepare(
+          'SELECT id_producto, cantidad FROM detalle_pedidos WHERE id_pedido = ?'
+        ).bind(id_pedido).all();
+
+        for (const item of detalle) {
+          stmts.push(
+            env.elegance_db.prepare(
+              'UPDATE productos SET stock = stock + ? WHERE id = ?'
+            ).bind(ajuste * item.cantidad, item.id_producto)
+          );
+        }
+      }
+
+      stmts.push(
+        env.elegance_db.prepare(
+          'UPDATE pedidos SET estado = ? WHERE id_pedido = ?'
+        ).bind(nuevo_estado, id_pedido)
+      );
+
+      await env.elegance_db.batch(stmts);
+      return Response.json({ success: true, estado: nuevo_estado });
+    }
+
+    return Response.json({ success: false, error: 'Acción no reconocida' }, { status: 400 });
+
   } catch (err) {
     return Response.json({ success: false, error: err.message }, { status: 500 });
   }
@@ -116,9 +207,9 @@ export async function onRequestPatch(context) {
 export async function onRequestOptions() {
   return new Response(null, {
     headers: {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin':  '*',
       'Access-Control-Allow-Methods': 'GET, PATCH, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },
   });
 }

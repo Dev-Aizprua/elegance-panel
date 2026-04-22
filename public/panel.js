@@ -256,23 +256,56 @@ function limpiarBuscadorPedidos() {
   cargarPedidos(filtroEstadoActual);
 }
 
+
+// ── RENDERIZAR PEDIDOS ── ★ ACTUALIZADO con Aprobar/Cancelar
 function renderizarPedidos(lista) {
   const tbody = document.getElementById('tablaPedidos');
   if (!lista.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:40px">Sin pedidos</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-dim);padding:40px">Sin pedidos</td></tr>';
     return;
   }
-  tbody.innerHTML = lista.map(p => `
+  tbody.innerHTML = lista.map(p => {
+    const esPendiente = p.estado === 'Pendiente de Pago' || p.estado === 'Pendiente';
+    const esCancelado = p.estado === 'Cancelado';
+
+    const linkCliente = p.url_pedido
+      ? `<a href="${p.url_pedido}" target="_blank" title="Ver ficha del cliente"
+           style="color:var(--primary);text-decoration:none;margin-left:6px;font-size:11px;">
+           <i class="fas fa-external-link-alt"></i></a>`
+      : '';
+
+    let acciones = '';
+    if (esPendiente) {
+      acciones = `
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <button class="btn btn-sm btn-success" onclick="aprobarPedido('${p.id_pedido}')"
+            style="font-size:11px;padding:4px 8px;white-space:nowrap;">
+            <i class="fas fa-check"></i> Aprobar
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="cancelarPedidoPanel('${p.id_pedido}')"
+            style="font-size:11px;padding:4px 8px;white-space:nowrap;">
+            <i class="fas fa-times"></i> Cancelar
+          </button>
+        </div>`;
+    } else if (!esCancelado) {
+      acciones = `<button class="btn btn-sm" onclick="abrirModalEstado('${p.id_pedido}','${p.estado}')"><i class="fas fa-edit"></i></button>`;
+    }
+
+    return `
     <tr>
-      <td><span style="font-family:'Orbitron',sans-serif;font-size:0.8rem;color:var(--primary)">${p.id_pedido}</span></td>
+      <td>
+        <span style="font-family:'Orbitron',sans-serif;font-size:0.8rem;color:var(--primary)">${p.id_pedido}</span>
+        ${linkCliente}
+      </td>
       <td>${p.fecha}</td>
       <td><strong style="color:var(--text-bright)">${p.cliente_nombre}</strong></td>
       <td style="color:var(--text-dim)">${p.cliente_email||'—'}</td>
       <td><span style="color:var(--success);font-weight:600">$${fmtNum(p.total)}</span></td>
-      <td><span class="badge status-${(p.estado||'').toLowerCase()}">${p.estado}</span></td>
+      <td><span class="badge status-${(p.estado||'').toLowerCase().replace(/ /g,'-')}">${p.estado}</span></td>
       <td><button class="btn btn-sm btn-icon" onclick="verFactura('${p.id_pedido}')"><i class="fas fa-eye"></i></button></td>
-      <td><button class="btn btn-sm" onclick="abrirModalEstado('${p.id_pedido}','${p.estado}')"><i class="fas fa-edit"></i></button></td>
-    </tr>`).join('');
+      <td>${acciones}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ── ENTREGAS ──────────────────────────────────────────────
@@ -427,6 +460,55 @@ async function confirmarCambioEstado() {
   cerrarModal('modalEstado');
 }
 
+
+// ── APROBAR PEDIDO ── ★ NUEVA ──────────────────────────────
+async function aprobarPedido(idPedido) {
+  if (!confirm(`¿Confirmar pago recibido del pedido ${idPedido}?\n\nEl estado cambiará a "Aprobado" y el cliente verá su cintillo en VERDE.`)) return;
+  try {
+    const res  = await fetch(`${API}/api/dashboard/pedidos`, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id_pedido: idPedido, accion: 'aprobar' }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      mostrarToast(`✅ Pedido ${idPedido} APROBADO`, 'success');
+      reproducirCampana();
+      cargarPedidos(filtroEstadoActual);
+      cargarEntregas();
+      cargarOverview();
+    } else {
+      mostrarToast('Error: ' + data.error, 'error');
+    }
+  } catch(e) {
+    mostrarToast('Error de conexión', 'error');
+  }
+}
+
+// ── CANCELAR PEDIDO ── ★ NUEVA (devuelve stock automático) ──
+async function cancelarPedidoPanel(idPedido) {
+  if (!confirm(`¿Cancelar el pedido ${idPedido}?\n\n⚠️ El stock se devolverá automáticamente al inventario en D1.`)) return;
+  try {
+    const res  = await fetch(`${API}/api/dashboard/pedidos`, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id_pedido: idPedido, accion: 'cancelar' }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      mostrarToast(`Pedido ${idPedido} cancelado · Stock devuelto ↩️`, 'warning');
+      cargarPedidos(filtroEstadoActual);
+      cargarProductos();
+      cargarOverview();
+    } else {
+      mostrarToast('Error: ' + data.error, 'error');
+    }
+  } catch(e) {
+    mostrarToast('Error de conexión', 'error');
+  }
+}
+
+// ── CAMBIAR ESTADO ── ★ ACTUALIZADO ────────────────────────
 async function cambiarEstadoPedido(idPedido, nuevoEstado) {
   try {
     const res  = await fetch(`${API}/api/dashboard/pedidos`, {
@@ -436,10 +518,14 @@ async function cambiarEstadoPedido(idPedido, nuevoEstado) {
     });
     const data = await res.json();
     if (data.success) {
-      mostrarToast(`Pedido ${idPedido} → ${nuevoEstado}`, 'success');
+      const msg = nuevoEstado === 'Cancelado'
+        ? `Pedido ${idPedido} cancelado · Stock devuelto ↩️`
+        : `Pedido ${idPedido} → ${nuevoEstado}`;
+      mostrarToast(msg, 'success');
       cargarPedidos(filtroEstadoActual);
       cargarEntregas();
       cargarOverview();
+      if (nuevoEstado === 'Cancelado') cargarProductos();
     } else {
       mostrarToast('Error: ' + data.error, 'error');
     }
@@ -603,11 +689,19 @@ function exportarClientesExcel() {
   });
 }
 
+
+// ── EXPORTAR PEDIDOS ── ★ ACTUALIZADO (incluye URL pedido) ──
 function exportarPedidosFiltrados() {
-  const rows = [['ID','Fecha','Cliente','Correo','Total','Estado']];
-  pedidosOriginales.forEach(p => rows.push([p.id_pedido,p.fecha,p.cliente_nombre,p.cliente_email,p.total,p.estado]));
-  descargarCSV(rows, 'pedidos_elegance.csv');
+  const rows = [['ID Pedido','Fecha','Cliente','Correo','Teléfono','Total','Estado','URL Pedido']];
+  pedidosOriginales.forEach(p => rows.push([
+    p.id_pedido, p.fecha, p.cliente_nombre,
+    p.cliente_email||'', p.cliente_tel||'',
+    p.total, p.estado, p.url_pedido||''
+  ]));
+  descargarCSV(rows, `pedidos_elegance_${new Date().toISOString().split('T')[0]}.csv`);
+  mostrarToast('Reporte descargado ✅', 'success');
 }
+
 
 function descargarCSV(rows, nombre) {
   const csv  = rows.map(r => r.map(c => `"${(c||'').toString().replace(/"/g,'""')}"`).join(',')).join('\n');
