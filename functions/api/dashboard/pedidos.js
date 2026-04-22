@@ -5,33 +5,15 @@
 // PATCH → aprobar o cancelar pedido
 // ============================================================
 
-async function validarToken(token, env) {
-  if (!token) return false;
-  try {
-    const { results } = await env.elegance_db.prepare(
-      "SELECT token, expires_at FROM admin_sessions WHERE token = ?"
-    ).bind(token).all();
-    if (!results.length) return false;
-    if (new Date() > new Date(results[0].expires_at)) return false;
-    return true;
-  } catch (e) { return false; }
-}
-
 // ── GET — Listar pedidos ───────────────────────────────────
 export async function onRequestGet(context) {
   const { env, request } = context;
   const url         = new URL(request.url);
-  const authToken   = request.headers.get('Authorization')?.replace('Bearer ', '') ||
-                      url.searchParams.get('token');
   const estado_pago = url.searchParams.get('estado_pago') || 'todos';
   const estado      = url.searchParams.get('estado')      || 'todos';
   const buscar      = url.searchParams.get('buscar')      || '';
   const desde       = url.searchParams.get('desde')       || '';
   const hasta       = url.searchParams.get('hasta')       || '';
-
-  if (!await validarToken(authToken, env)) {
-    return Response.json({ success: false, error: 'No autorizado' }, { status: 401 });
-  }
 
   try {
     let where = 'WHERE p.archivado = 0';
@@ -84,13 +66,6 @@ export async function onRequestGet(context) {
 // ── PATCH — Aprobar o Cancelar ─────────────────────────────
 export async function onRequestPatch(context) {
   const { env, request } = context;
-  const url       = new URL(request.url);
-  const authToken = request.headers.get('Authorization')?.replace('Bearer ', '') ||
-                    url.searchParams.get('token');
-
-  if (!await validarToken(authToken, env)) {
-    return Response.json({ success: false, error: 'No autorizado' }, { status: 401 });
-  }
 
   try {
     const { id_pedido, accion, nuevo_estado } = await request.json();
