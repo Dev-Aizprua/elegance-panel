@@ -265,11 +265,18 @@ function renderizarPedidos(lista) {
     return;
   }
   tbody.innerHTML = lista.map(p => {
-    const esPendiente = p.estado === 'Pendiente de Pago' || p.estado === 'Pendiente';
-    const esCancelado = p.estado === 'Cancelado';
+    // Usar estado_pago para la lógica de botones
+    const estadoPago   = (p.estado_pago || '').toLowerCase();
+    const esPendiente  = estadoPago === 'pendiente';
+    const esAprobado   = estadoPago === 'aprobado';
+    const esCancelado  = estadoPago === 'cancelado' || p.estado === 'Cancelado';
 
-    const linkCliente = p.url_pedido
-      ? `<a href="${p.url_pedido}" target="_blank" title="Ver ficha del cliente"
+    // Badge visual: mostrar estado_pago si existe, sino estado
+    const badgeTexto = esAprobado ? 'Aprobado' : esCancelado ? 'Cancelado' : (p.estado || 'Pendiente');
+    const badgeCls   = esAprobado ? 'aprobado' : esCancelado ? 'cancelado' : 'pendiente';
+
+    const linkCliente = p.token_vista
+      ? `<a href="/pedido?id=${p.id_pedido}&key=${p.token_vista}" target="_blank" title="Ver ficha del cliente"
            style="color:var(--primary);text-decoration:none;margin-left:6px;font-size:11px;">
            <i class="fas fa-external-link-alt"></i></a>`
       : '';
@@ -287,7 +294,7 @@ function renderizarPedidos(lista) {
             <i class="fas fa-times"></i> Cancelar
           </button>
         </div>`;
-    } else if (!esCancelado) {
+    } else if (esAprobado) {
       acciones = `<button class="btn btn-sm" onclick="abrirModalEstado('${p.id_pedido}','${p.estado}')"><i class="fas fa-edit"></i></button>`;
     }
 
@@ -301,7 +308,7 @@ function renderizarPedidos(lista) {
       <td><strong style="color:var(--text-bright)">${p.cliente_nombre}</strong></td>
       <td style="color:var(--text-dim)">${p.cliente_email||'—'}</td>
       <td><span style="color:var(--success);font-weight:600">$${fmtNum(p.total)}</span></td>
-      <td><span class="badge status-${(p.estado||'').toLowerCase().replace(/ /g,'-')}">${p.estado}</span></td>
+      <td><span class="badge status-${badgeCls}">${badgeTexto}</span></td>
       <td><button class="btn btn-sm btn-icon" onclick="verFactura('${p.id_pedido}')"><i class="fas fa-eye"></i></button></td>
       <td>${acciones}</td>
     </tr>`;
