@@ -293,9 +293,22 @@ function renderizarPedidos(lista) {
             style="font-size:11px;padding:4px 8px;white-space:nowrap;">
             <i class="fas fa-times"></i> Cancelar
           </button>
+          <button class="btn btn-sm" onclick="reenviarSeguimiento('${p.id_pedido}','${p.cliente_nombre}','${p.cliente_tel||''}','${p.token_vista||''}')"
+            style="font-size:11px;padding:4px 8px;white-space:nowrap;background:rgba(37,211,102,.15);color:#25D366;border:1px solid rgba(37,211,102,.3);">
+            <i class="fab fa-whatsapp"></i> Reenviar
+          </button>
         </div>`;
     } else if (esAprobado) {
-      acciones = `<button class="btn btn-sm" onclick="abrirModalEstado('${p.id_pedido}','${p.estado}')"><i class="fas fa-edit"></i></button>`;
+      acciones = `
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <button class="btn btn-sm" onclick="abrirModalEstado('${p.id_pedido}','${p.estado}')">
+            <i class="fas fa-edit"></i> Estado
+          </button>
+          <button class="btn btn-sm" onclick="reenviarSeguimiento('${p.id_pedido}','${p.cliente_nombre}','${p.cliente_tel||''}','${p.token_vista||''}')"
+            style="font-size:11px;padding:4px 8px;white-space:nowrap;background:rgba(37,211,102,.15);color:#25D366;border:1px solid rgba(37,211,102,.3);">
+            <i class="fab fa-whatsapp"></i> Reenviar
+          </button>
+        </div>`;
     }
 
     return `
@@ -1146,4 +1159,19 @@ async function subirImagenCloudinary() {
     mostrarToast('Error de conexión al subir imagen', 'error');
     if (progressDiv) progressDiv.style.display = 'none';
   }
+}
+// ── Reenviar link de seguimiento por WhatsApp ── ★ NUEVO
+function reenviarSeguimiento(idPedido, nombreCliente, telCliente, tokenVista) {
+  const urlPedido = window.location.origin.replace('elegance-panel', 'elegance-jewelry') +
+                    '/pedido?id=' + idPedido + '&key=' + tokenVista;
+  const tel = (telCliente || '').replace(/\D/g, '');
+  const msg = encodeURIComponent(
+    'Hola ' + nombreCliente + ', aquí tienes el link de seguimiento de tu pedido en Elegance Jewelry:\n\n' +
+    '🔗 ' + urlPedido + '\n\n' +
+    'Puedes ver el estado de tu pedido y los datos de pago en cualquier momento. ✨'
+  );
+  const waUrl = tel
+    ? 'https://wa.me/' + tel + '?text=' + msg
+    : 'https://web.whatsapp.com/send?text=' + msg;
+  window.open(waUrl, '_blank');
 }
