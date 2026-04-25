@@ -293,22 +293,9 @@ function renderizarPedidos(lista) {
             style="font-size:11px;padding:4px 8px;white-space:nowrap;">
             <i class="fas fa-times"></i> Cancelar
           </button>
-          <button class="btn btn-sm" onclick="reenviarSeguimiento('${p.id_pedido}','${p.cliente_nombre}','${p.cliente_tel||''}','${p.token_vista||''}')"
-            style="font-size:11px;padding:4px 8px;white-space:nowrap;background:rgba(37,211,102,.15);color:#25D366;border:1px solid rgba(37,211,102,.3);">
-            <i class="fab fa-whatsapp"></i> Reenviar
-          </button>
         </div>`;
     } else if (esAprobado) {
-      acciones = `
-        <div style="display:flex;flex-direction:column;gap:4px;">
-          <button class="btn btn-sm" onclick="abrirModalEstado('${p.id_pedido}','${p.estado}')">
-            <i class="fas fa-edit"></i> Estado
-          </button>
-          <button class="btn btn-sm" onclick="reenviarSeguimiento('${p.id_pedido}','${p.cliente_nombre}','${p.cliente_tel||''}','${p.token_vista||''}')"
-            style="font-size:11px;padding:4px 8px;white-space:nowrap;background:rgba(37,211,102,.15);color:#25D366;border:1px solid rgba(37,211,102,.3);">
-            <i class="fab fa-whatsapp"></i> Reenviar
-          </button>
-        </div>`;
+      acciones = `<button class="btn btn-sm" onclick="abrirModalEstado('${p.id_pedido}','${p.estado}')"><i class="fas fa-edit"></i></button>`;
     }
 
     return `
@@ -695,40 +682,83 @@ function verFactura(idPedido) {
 
 // ── EXPORTAR ──────────────────────────────────────────────
 function exportarProductosExcel() {
-  const rows = [['ID','Nombre','Descripción','Precio Base','Costo','Categoría','Stock','ITBMS%','Destacado']];
-  productosOriginales.forEach(p => rows.push([p.id,p.nombre,p.descripcion,p.precio_base,p.costo,p.categoria,p.stock,p.itbms_pct,p.destacado?'Sí':'No']));
-  descargarCSV(rows, 'productos_elegance.csv');
+  const cols = ['ID','Nombre','Descripción','Precio Base','Costo','Categoría','Stock','ITBMS%','Destacado'];
+  const rows = productosOriginales.map(p => [
+    p.id, p.nombre, p.descripcion || '', p.precio_base, p.costo || 0,
+    p.categoria, p.stock, p.itbms_pct, p.destacado ? 'Sí' : 'No'
+  ]);
+  descargarExcel(cols, rows, 'productos_elegance');
 }
 
 function exportarClientesExcel() {
-  fetch(`${API}/api/dashboard/clientes`).then(r=>r.json()).then(data=>{
+  fetch(`${API}/api/dashboard/clientes`).then(r => r.json()).then(data => {
     if (!data.success) return;
-    const rows = [['Nombre','Correo','Teléfono','Dirección','Pedidos','Total']];
-    data.clientes.forEach(c => rows.push([c.nombre,c.email,c.telefono,c.direccion,c.total_pedidos,c.total_gastado]));
-    descargarCSV(rows, 'clientes_elegance.csv');
+    const cols = ['Nombre','Correo','Teléfono','Dirección','Pedidos','Total Gastado'];
+    const rows = data.clientes.map(c => [
+      c.nombre, c.email, c.telefono || '', c.direccion || '',
+      c.total_pedidos, c.total_gastado
+    ]);
+    descargarExcel(cols, rows, 'clientes_elegance');
   });
 }
 
-
-// ── EXPORTAR PEDIDOS ── ★ ACTUALIZADO (incluye URL pedido) ──
 function exportarPedidosFiltrados() {
-  const rows = [['ID Pedido','Fecha','Cliente','Correo','Teléfono','Total','Estado','URL Pedido']];
-  pedidosOriginales.forEach(p => rows.push([
+  const cols = ['ID Pedido','Fecha','Cliente','Correo','Teléfono','Total','Estado','Estado Pago'];
+  const rows = pedidosOriginales.map(p => [
     p.id_pedido, p.fecha, p.cliente_nombre,
-    p.cliente_email||'', p.cliente_tel||'',
-    p.total, p.estado, p.url_pedido||''
-  ]));
-  descargarCSV(rows, `pedidos_elegance_${new Date().toISOString().split('T')[0]}.csv`);
+    p.cliente_email || '', p.cliente_tel || '',
+    p.total, p.estado, p.estado_pago || ''
+  ]);
+  descargarExcel(cols, rows, `pedidos_elegance_${new Date().toISOString().split('T')[0]}`);
   mostrarToast('Reporte descargado ✅', 'success');
 }
 
+// ── Generador de Excel real (.xls) sin librerías externas ──
+function descargarExcel(columnas, filas, nombreArchivo) {
+  // Estilo dorado Elegance para el encabezado
+  const estiloHeader = 'background:#1C1A16;color:#D4AF37;font-weight:bold;font-size:12pt;' +
+                       'border:1px solid #8B6914;padding:6px 10px;text-align:center;';
+  const estiloFila   = 'border:1px solid #ddd;padding:5px 8px;font-size:11pt;';
+  const estiloFilaAlt= 'border:1px solid #ddd;padding:5px 8px;font-size:11pt;background:#FAF8F3;';
 
-function descargarCSV(rows, nombre) {
-  const csv  = rows.map(r => r.map(c => `"${(c||'').toString().replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
+  const headerHTML = columnas
+    .map(c => `<th style="${estiloHeader}">${c}</th>`)
+    .join('');
+
+  const filasHTML = filas.map((fila, i) => {
+    const estilo = i % 2 === 0 ? estiloFila : estiloFilaAlt;
+    const celdas = fila.map(v => `<td style="${estilo}">${v ?? ''}</td>`).join('');
+    return `<tr>${celdas}</tr>`;
+  }).join('');
+
+  const fecha = new Date().toLocaleDateString('es-PA');
+  const html = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office"
+          xmlns:x="urn:schemas-microsoft-com:office:excel"
+          xmlns="http://www.w3.org/TR/REC-html40">
+    <head>
+      <meta charset="UTF-8">
+      <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets>
+        <x:ExcelWorksheet><x:Name>Elegance</x:Name>
+        <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+        </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+    </head>
+    <body>
+      <table style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;">
+        <thead><tr>${headerHTML}</tr></thead>
+        <tbody>${filasHTML}</tbody>
+      </table>
+      <p style="font-size:9pt;color:#888;margin-top:8px;">
+        Elegance Jewelry · Generado el ${fecha}
+      </p>
+    </body></html>`;
+
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href = url; a.download = nombre; a.click();
+  a.href     = url;
+  a.download = nombreArchivo + '.xls';
+  a.click();
   URL.revokeObjectURL(url);
 }
 
@@ -1159,19 +1189,4 @@ async function subirImagenCloudinary() {
     mostrarToast('Error de conexión al subir imagen', 'error');
     if (progressDiv) progressDiv.style.display = 'none';
   }
-}
-// ── Reenviar link de seguimiento por WhatsApp ── ★ NUEVO
-function reenviarSeguimiento(idPedido, nombreCliente, telCliente, tokenVista) {
-  const urlPedido = window.location.origin.replace('elegance-panel', 'elegance-jewelry') +
-                    '/pedido?id=' + idPedido + '&key=' + tokenVista;
-  const tel = (telCliente || '').replace(/\D/g, '');
-  const msg = encodeURIComponent(
-    'Hola ' + nombreCliente + ', aquí tienes el link de seguimiento de tu pedido en Elegance Jewelry:\n\n' +
-    '🔗 ' + urlPedido + '\n\n' +
-    'Puedes ver el estado de tu pedido y los datos de pago en cualquier momento. ✨'
-  );
-  const waUrl = tel
-    ? 'https://wa.me/' + tel + '?text=' + msg
-    : 'https://web.whatsapp.com/send?text=' + msg;
-  window.open(waUrl, '_blank');
 }
