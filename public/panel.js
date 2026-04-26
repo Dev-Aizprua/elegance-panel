@@ -712,56 +712,61 @@ function descargarPlantillaProductos() {
 async function importarProductosDesdeExcel(input) {
   const archivo = input.files[0];
   if (!archivo) return;
-  input.value = ''; // reset para permitir subir el mismo archivo de nuevo
+  input.value = '';
 
-  // Leer como texto (funciona para .csv y .xls HTML table)
-  const texto = await archivo.text();
+  // Leer el archivo como ArrayBuffer (funciona para .xlsx, .xls, .csv)
+  const buffer = await archivo.arrayBuffer();
   let filas = [];
 
-  // Detectar si es CSV o XLS (HTML table)
-  if (archivo.name.endsWith('.csv')) {
-    filas = texto.split('\n')
-      .map(l => l.split(',').map(c => c.replace(/^"|"$/g, '').trim()))
-      .filter(f => f.length > 1 && f[0]);
-  } else {
-    // Parsear tabla HTML del XLS que generamos nosotros
-    const parser  = new DOMParser();
-    const doc     = parser.parseFromString(texto, 'text/html');
-    const trs     = doc.querySelectorAll('tr');
-    trs.forEach(tr => {
-      const celdas = [...tr.querySelectorAll('td,th')].map(c => c.innerText?.trim() || '');
-      if (celdas.length > 1) filas.push(celdas);
-    });
+  try {
+    // SheetJS lee cualquier formato de Excel
+    const workbook  = XLSX.read(buffer, { type: 'array' });
+    const hoja      = workbook.Sheets[workbook.SheetNames[0]];
+    // sheet_to_json con header:1 devuelve arrays de filas
+    filas = XLSX.utils.sheet_to_json(hoja, { header: 1, defval: '' });
+  } catch(e) {
+    mostrarToast('No se pudo leer el archivo. Asegúrate de que sea .xlsx o .csv', 'error');
+    return;
   }
 
-  // Encontrar la fila de encabezados buscando "Nombre"
+  // Filtrar filas completamente vacías
+  filas = filas.filter(f => f.some(c => String(c).trim() !== ''));
+
+  // Encontrar la fila de encabezados — buscar la que tenga "Nombre"
+  // (puede estar en fila 1, 2 o 3 según la plantilla)
   let headerIdx = filas.findIndex(f =>
-    f.some(c => c.toLowerCase().includes('nombre') && !c.includes('PLANTILLA') && !c.includes('INSTRUC'))
+    f.some(c => String(c).toLowerCase().trim() === 'nombre')
   );
+
   if (headerIdx === -1) {
-    mostrarToast('No se encontró la fila de encabezados en el archivo', 'error'); return;
+    mostrarToast('No se encontró la fila de encabezados. Asegúrate de que la columna se llame "Nombre"', 'error');
+    return;
   }
 
-  const headers = filas[headerIdx].map(h => h.toLowerCase().trim());
-  const datos   = filas.slice(headerIdx + 1).filter(f => f[0] && f.some(c => c.trim()));
+  const headers = filas[headerIdx].map(h => String(h).toLowerCase().trim());
+  const datos   = filas.slice(headerIdx + 1).filter(f =>
+    f.some(c => String(c).trim() !== '')
+  );
 
   if (datos.length === 0) {
-    mostrarToast('El archivo no tiene productos para importar', 'error'); return;
+    mostrarToast('El archivo no tiene productos para importar. Agrega al menos una fila de datos.', 'error');
+    return;
   }
 
-  // Mapear columnas por nombre
-  const col = name => headers.findIndex(h => h.includes(name));
-  const iNombre   = col('nombre');
-  const iDesc     = col('descrip');
-  const iPrecio   = col('precio');
-  const iCosto    = col('costo');
-  const iCat      = col('categ');
-  const iStock    = col('stock');
-  const iItbms    = col('itbms');
-  const iDestacado= col('destac');
+  // Mapear índices de columnas por nombre parcial
+  const col = keyword => headers.findIndex(h => h.includes(keyword));
+  const iNombre    = col('nombre');
+  const iDesc      = col('descrip');
+  const iPrecio    = col('precio');
+  const iCosto     = col('costo');
+  const iCat       = col('categ');
+  const iStock     = col('stock');
+  const iItbms     = col('itbms');
+  const iDestacado = col('destac');
 
   if (iNombre === -1 || iPrecio === -1) {
-    mostrarToast('El archivo debe tener columnas "Nombre" y "Precio Base"', 'error'); return;
+    mostrarToast('El archivo debe tener columnas "Nombre" y "Precio Base"', 'error');
+    return;
   }
 
   // Mostrar modal de progreso
@@ -775,26 +780,29 @@ async function importarProductosDesdeExcel(input) {
 
   for (let i = 0; i < datos.length; i++) {
     const f = datos[i];
-    msg.textContent      = `Creando: ${f[iNombre] || ''}`;
-    barra.style.width    = `${Math.round(((i+1)/datos.length)*100)}%`;
-    contador.textContent = `${i+1} / ${datos.length} productos`;
+    const nombre = String(f[iNombre] || '').trim();
+    msg.textContent      = `Creando: ${nombre}`;
+    barra.style.width    = `${Math.round(((i + 1) / datos.length) * 100)}%`;
+    contador.textContent = `${i + 1} / ${datos.length} productos`;
 
-    const destacadoVal = iDestacado >= 0 ? f[iDestacado] : '';
+    const destacadoRaw = iDestacado >= 0 ? String(f[iDestacado] || '') : '';
+    const precio = iPrecio >= 0 ? parseFloat(String(f[iPrecio]).replace(',', '.')) || 0 : 0;
+
     const producto = {
-      nombre:      f[iNombre]   || '',
-      descripcion: iDesc >= 0   ? f[iDesc]    : '',
-      precio_base: iPrecio >= 0 ? parseFloat(f[iPrecio].replace(',','.')) || 0 : 0,
-      costo:       iCosto >= 0  ? parseFloat(f[iCosto].replace(',','.'))  || 0 : 0,
-      categoria:   iCat >= 0    ? f[iCat]     : '',
-      stock:       iStock >= 0  ? parseInt(f[iStock])    || 0 : 0,
-      itbms_pct:   iItbms >= 0  ? parseFloat(f[iItbms])  || 7 : 7,
-      destacado:   /^s[íi]$/i.test(destacadoVal.trim()) || destacadoVal === '1',
+      nombre,
+      descripcion: iDesc >= 0      ? String(f[iDesc]  || '').trim() : '',
+      precio_base: precio,
+      costo:       iCosto >= 0     ? parseFloat(String(f[iCosto] || '0').replace(',', '.')) || 0 : 0,
+      categoria:   iCat >= 0       ? String(f[iCat]   || '').trim() : '',
+      stock:       iStock >= 0     ? parseInt(f[iStock])    || 0 : 0,
+      itbms_pct:   iItbms >= 0     ? parseFloat(f[iItbms])  || 7 : 7,
+      destacado:   /^s[íi]$/i.test(destacadoRaw.trim()) || destacadoRaw.trim() === '1',
     };
 
     if (!producto.nombre || !producto.precio_base) { errores++; continue; }
 
     try {
-      const res = await fetch(`${API}/api/dashboard/productos`, {
+      const res  = await fetch(`${API}/api/dashboard/productos`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(producto),
@@ -803,7 +811,7 @@ async function importarProductosDesdeExcel(input) {
       if (data.success) ok++; else errores++;
     } catch(e) { errores++; }
 
-    // Pequeña pausa para no saturar el API
+    // Pausa breve para no saturar el API
     await new Promise(r => setTimeout(r, 120));
   }
 
