@@ -714,28 +714,39 @@ async function importarProductosDesdeExcel(input) {
   if (!archivo) return;
   input.value = '';
 
-  // Leer como ArrayBuffer — funciona para .xlsx, .xls y .csv
+  // ── ERROR 5: Formato de archivo ─────────────────────────
+  const ext = archivo.name.split('.').pop().toLowerCase();
+  if (!['xlsx', 'xls', 'csv'].includes(ext)) {
+    mostrarToast('Formato no válido. Solo se aceptan archivos .xlsx, .xls o .csv', 'error');
+    return;
+  }
+
+  // ── Leer archivo con SheetJS ─────────────────────────────
   const buffer = await archivo.arrayBuffer();
   let filas = [];
-
   try {
     const workbook = XLSX.read(buffer, { type: 'array' });
     const hoja     = workbook.Sheets[workbook.SheetNames[0]];
     filas = XLSX.utils.sheet_to_json(hoja, { header: 1, defval: '' });
   } catch(e) {
-    mostrarToast('No se pudo leer el archivo. Usa formato .xlsx o .csv', 'error');
+    mostrarToast('No se pudo leer el archivo. Asegúrate de que no esté dañado.', 'error');
     return;
   }
 
-  // Quitar filas completamente vacías
+  // ── ERROR 6: Filas vacías — limpiar antes de procesar ────
   filas = filas.filter(f => f.some(c => String(c).trim() !== ''));
 
-  // Buscar fila de encabezados — la que tenga exactamente "nombre" en alguna celda
+  // ── ERROR 2: Encabezados alterados ──────────────────────
+  // Buscar fila que tenga exactamente "nombre" como celda
   let headerIdx = filas.findIndex(f =>
     f.some(c => String(c).toLowerCase().trim() === 'nombre')
   );
   if (headerIdx === -1) {
-    mostrarToast('No se encontró la fila de encabezados. La columna debe llamarse exactamente "Nombre"', 'error');
+    mostrarToast(
+      '❌ No se encontró la columna "Nombre". ' +
+      'Asegúrate de no haber cambiado los encabezados de la plantilla.',
+      'error'
+    );
     return;
   }
 
@@ -750,24 +761,122 @@ async function importarProductosDesdeExcel(input) {
   const iItbms     = col('itbms');
   const iDestacado = col('destac');
 
-  if (iNombre === -1 || iPrecio === -1) {
-    mostrarToast('El archivo debe tener columnas "Nombre" y "Precio Base"', 'error');
+  // Verificar columnas obligatorias
+  const faltantes = [];
+  if (iNombre === -1) faltantes.push('"Nombre"');
+  if (iPrecio === -1) faltantes.push('"Precio Base"');
+  if (faltantes.length > 0) {
+    mostrarToast(`❌ Columnas obligatorias no encontradas: ${faltantes.join(' y ')}`, 'error');
     return;
   }
 
-  // Solo filas con nombre real y precio numérico mayor a 0
-  const datos = filas.slice(headerIdx + 1).filter(f => {
-    const nombre = String(f[iNombre] ?? '').trim();
-    const precio = parseFloat(String(f[iPrecio] ?? '').replace(',', '.'));
-    return nombre.length > 0 && !isNaN(precio) && precio > 0;
+  // ── Categorías existentes para validación ────────────────
+  const categoriasExistentes = [...new Set(
+    productosOriginales.map(p => (p.categoria || '').toLowerCase().trim()).filter(Boolean)
+  )];
+
+  // ── Función limpiadora de números (Error 1) ──────────────
+  function limpiarNumero(raw, defecto = 0) {
+    if (raw === null || raw === undefined || raw === '') return defecto;
+    // Quitar símbolos: $, B/., espacios, letras
+    const limpio = String(raw)
+      .replace(/[B\/\.\$\s]/g, '')   // quita B/, $, espacios
+      .replace(/[^\d,\.\-]/g, '')    // quita todo excepto dígitos, coma, punto, guión
+      .replace(/,(\d{2})$/, '.$1')   // convierte coma decimal: 150,00 → 150.00
+      .replace(/,/g, '');            // quita separadores de miles restantes
+    const num = parseFloat(limpio);
+    return isNaN(num) ? defecto : num;
+  }
+
+  // ── Función sanitizadora de texto (Error 3) ──────────────
+  function sanitizar(raw, maxLen = 200) {
+    return String(raw || '')
+      .replace(/[\u201C\u201D\u2018\u2019]/g, '"')  // comillas inteligentes → normales
+      .replace(/[\r\n\t]/g, ' ')                     // saltos de línea → espacio
+      .replace(/[^\x20-\x7E\u00C0-\u024F]/g, '')    // eliminar caracteres raros (mantiene español)
+      .trim()
+      .slice(0, maxLen);
+  }
+
+  // ── Pre-validación completa (muestra errores por fila) ───
+  const filasDatos = filas.slice(headerIdx + 1);
+  const erroresPrevios = [];
+  const productosProcesar = [];
+
+  filasDatos.forEach((f, idx) => {
+    const numFila   = headerIdx + idx + 2; // número real en Excel (1-indexed + encabezados)
+    const nombre    = sanitizar(f[iNombre]);
+    const precioRaw = f[iPrecio] ?? '';
+    const precio    = limpiarNumero(precioRaw);
+
+    // ── ERROR 6: Fila vacía — ignorar silenciosamente
+    if (!nombre && !precioRaw) return;
+
+    // ── ERROR 7: Nombre obligatorio
+    if (!nombre) {
+      erroresPrevios.push(`Fila ${numFila}: falta el Nombre.`);
+      return;
+    }
+
+    // ── ERROR 1: Precio inválido
+    if (!precio || precio <= 0) {
+      erroresPrevios.push(
+        `Fila ${numFila} (${nombre}): precio "${precioRaw}" no es un número válido.`
+      );
+      return;
+    }
+
+    // ── ERROR 4: Categoría inconsistente — normalizar a Title Case
+    let categoria = sanitizar(f[iCat] ?? '');
+    if (categoria) {
+      // Normalizar: primera letra mayúscula, resto minúsculas
+      categoria = categoria.charAt(0).toUpperCase() + categoria.slice(1).toLowerCase();
+      // Advertencia si no coincide con ninguna existente (no bloquea, solo avisa)
+      if (categoriasExistentes.length > 0 &&
+          !categoriasExistentes.includes(categoria.toLowerCase())) {
+        erroresPrevios.push(
+          `Fila ${numFila} (${nombre}): categoría "${categoria}" es nueva y se creará.`
+        );
+      }
+    }
+
+    const destacadoRaw = String(iDestacado >= 0 ? f[iDestacado] ?? '' : '');
+    productosProcesar.push({
+      _fila:       numFila,
+      nombre,
+      descripcion: sanitizar(f[iDesc] ?? '', 100),
+      precio_base: precio,
+      costo:       limpiarNumero(f[iCosto] ?? ''),
+      categoria,
+      stock:       Math.max(0, parseInt(f[iStock] ?? '0') || 0),
+      itbms_pct:   limpiarNumero(f[iItbms] ?? '', 7) || 7,
+      destacado:   /^s[íi]$/i.test(destacadoRaw.trim()) || destacadoRaw.trim() === '1',
+    });
   });
 
-  if (datos.length === 0) {
-    mostrarToast('El archivo no tiene productos válidos para importar', 'error');
+  // Si hay errores bloqueantes, mostrarlos antes de proceder
+  const bloqueantes = erroresPrevios.filter(e => !e.includes('es nueva'));
+  if (bloqueantes.length > 0) {
+    const lista = bloqueantes.slice(0, 5).join('\n');
+    const extra = bloqueantes.length > 5 ? `\n...y ${bloqueantes.length - 5} más.` : '';
+    alert('⚠️ Errores encontrados en el archivo:\n\n' + lista + extra +
+          '\n\nCorrige el archivo y vuelve a importar.');
     return;
   }
 
-  // Mostrar modal de progreso
+  if (productosProcesar.length === 0) {
+    mostrarToast('El archivo no tiene productos válidos para importar.', 'error');
+    return;
+  }
+
+  // Mostrar advertencias de categorías nuevas (no bloqueante)
+  const advertencias = erroresPrevios.filter(e => e.includes('es nueva'));
+  if (advertencias.length > 0) {
+    mostrarToast(`ℹ️ ${advertencias.length} categoría(s) nueva(s) serán creadas`, 'info');
+    await new Promise(r => setTimeout(r, 1500));
+  }
+
+  // ── Modal de progreso ────────────────────────────────────
   const modal    = document.getElementById('modalImportar');
   const msg      = document.getElementById('modalImportarMsg');
   const barra    = document.getElementById('modalImportarBarra');
@@ -775,26 +884,15 @@ async function importarProductosDesdeExcel(input) {
   modal.style.display = 'flex';
 
   let ok = 0, errores = 0;
+  const erroresDetalle = [];
 
-  for (let i = 0; i < datos.length; i++) {
-    const f           = datos[i];
-    const nombre      = String(f[iNombre] || '').trim();
-    const destacadoRaw= String(iDestacado >= 0 ? f[iDestacado] : '');
+  for (let i = 0; i < productosProcesar.length; i++) {
+    const p = productosProcesar[i];
+    const { _fila, ...producto } = p;
 
-    msg.textContent      = `Creando: ${nombre}`;
-    barra.style.width    = `${Math.round(((i + 1) / datos.length) * 100)}%`;
-    contador.textContent = `${i + 1} / ${datos.length} productos`;
-
-    const producto = {
-      nombre,
-      descripcion: iDesc >= 0  ? String(f[iDesc]  || '').trim() : '',
-      precio_base: parseFloat(String(f[iPrecio] || '0').replace(',', '.')) || 0,
-      costo:       iCosto >= 0 ? parseFloat(String(f[iCosto] || '0').replace(',', '.')) || 0 : 0,
-      categoria:   iCat >= 0   ? String(f[iCat]   || '').trim() : '',
-      stock:       iStock >= 0 ? parseInt(f[iStock])  || 0 : 0,
-      itbms_pct:   iItbms >= 0 ? parseFloat(f[iItbms]) || 7 : 7,
-      destacado:   /^s[íi]$/i.test(destacadoRaw.trim()) || destacadoRaw.trim() === '1',
-    };
+    msg.textContent      = `Creando: ${producto.nombre}`;
+    barra.style.width    = `${Math.round(((i + 1) / productosProcesar.length) * 100)}%`;
+    contador.textContent = `${i + 1} / ${productosProcesar.length} productos`;
 
     try {
       const res  = await fetch(`${API}/api/dashboard/productos`, {
@@ -803,8 +901,16 @@ async function importarProductosDesdeExcel(input) {
         body:    JSON.stringify(producto),
       });
       const data = await res.json();
-      if (data.success) ok++; else errores++;
-    } catch(e) { errores++; }
+      if (data.success) {
+        ok++;
+      } else {
+        errores++;
+        erroresDetalle.push(`Fila ${_fila} (${producto.nombre}): ${data.error || 'error del servidor'}`);
+      }
+    } catch(e) {
+      errores++;
+      erroresDetalle.push(`Fila ${_fila} (${producto.nombre}): sin conexión`);
+    }
 
     await new Promise(r => setTimeout(r, 120));
   }
@@ -812,8 +918,14 @@ async function importarProductosDesdeExcel(input) {
   modal.style.display = 'none';
   await cargarProductos();
 
-  const resumen = `✅ ${ok} productos creados` + (errores > 0 ? ` · ⚠️ ${errores} con error` : '');
-  mostrarToast(resumen, ok > 0 ? 'success' : 'error');
+  // Reporte final
+  if (errores === 0) {
+    mostrarToast(`✅ ${ok} productos importados correctamente`, 'success');
+  } else {
+    const detalle = erroresDetalle.slice(0, 3).join('\n');
+    const extra   = erroresDetalle.length > 3 ? `\n...y ${erroresDetalle.length - 3} más.` : '';
+    alert(`Importación completada:\n✅ ${ok} creados · ⚠️ ${errores} con error\n\n${detalle}${extra}`);
+  }
 }
 
 function exportarClientesExcel() {
