@@ -729,7 +729,7 @@ async function importarProductosDesdeExcel(input) {
     const doc     = parser.parseFromString(texto, 'text/html');
     const trs     = doc.querySelectorAll('tr');
     trs.forEach(tr => {
-      const celdas = [...tr.querySelectorAll('td,th')].map(c => (c.textContent || '').trim());
+      const celdas = [...tr.querySelectorAll('td,th')].map(c => c.innerText?.trim() || '');
       if (celdas.length > 1) filas.push(celdas);
     });
   }
