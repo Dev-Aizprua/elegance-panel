@@ -180,6 +180,9 @@
             <div class="search-box"><i class="fas fa-search"></i><input type="text" id="buscarProducto" placeholder="Buscar productos..." oninput="filtrarProductos()"></div>
             <button class="btn btn-primary" onclick="abrirModalProducto()"><i class="fas fa-plus"></i> Nuevo</button>
             <button class="btn" onclick="exportarProductosExcel()"><i class="fas fa-file-excel"></i> Exportar</button>
+            <button class="btn" onclick="descargarPlantillaProductos()" title="Descarga la plantilla Excel para llenar y luego importar"><i class="fas fa-download"></i> Plantilla</button>
+            <button class="btn btn-success" onclick="document.getElementById('inputImportarExcel').click()" title="Importar productos desde Excel"><i class="fas fa-upload"></i> Importar</button>
+            <input type="file" id="inputImportarExcel" accept=".xls,.xlsx,.csv" style="display:none" onchange="importarProductosDesdeExcel(this)">
           </div>
         </div>
         <div class="products-grid" id="gridProductos"></div>
@@ -508,5 +511,21 @@
   </audio>
 
   <script src="panel.js"></script>
+<!-- Modal importación masiva productos -->
+<div id="modalImportar" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);
+     display:none;align-items:center;justify-content:center;">
+  <div style="background:var(--card-bg,#1e1b16);border:1px solid var(--primary,#D4AF37);border-radius:16px;
+       padding:28px 24px;width:90%;max-width:460px;text-align:center;">
+    <div style="font-size:24px;margin-bottom:8px;">📦</div>
+    <h3 style="color:var(--primary,#D4AF37);margin-bottom:6px;font-size:16px;">Importando productos...</h3>
+    <p id="modalImportarMsg" style="color:#aaa;font-size:13px;margin-bottom:16px;">Procesando archivo</p>
+    <div style="background:#333;border-radius:8px;height:10px;overflow:hidden;margin-bottom:12px;">
+      <div id="modalImportarBarra" style="height:100%;width:0%;background:var(--primary,#D4AF37);
+           transition:width .3s;border-radius:8px;"></div>
+    </div>
+    <p id="modalImportarContador" style="color:#888;font-size:12px;">0 / 0 productos</p>
+  </div>
+</div>
+
 </body>
 </html>

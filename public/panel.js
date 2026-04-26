@@ -690,6 +690,130 @@ function exportarProductosExcel() {
   descargarExcel(cols, rows, 'productos_elegance');
 }
 
+// ── Plantilla vacía para importación masiva ── ★ NUEVO
+function descargarPlantillaProductos() {
+  const cols = ['Nombre','Descripción','Precio Base','Costo','Categoría','Stock','ITBMS%','Destacado'];
+  const ejemplo = [
+    ['Anillo Solitario Oro 18K','Anillo clásico en oro amarillo 18K','850','520','Anillos','10','7','Sí'],
+    ['Aretes Argolla Plata','Argollas en plata 925 diámetro 3cm','95','45','Aretes','20','7','No'],
+    ['Collar Perlas','Collar de perlas cultivadas largo 45cm','320','180','Collares','5','7','Sí'],
+  ];
+  // Nota explicativa como primera fila
+  const nota = [['⚠️ INSTRUCCIONES: No modifiques los encabezados. Columna "Destacado": escribe Sí o No. ITBMS% normalmente es 7. Deja "ID" vacío para que se genere automático.','','','','','','','']];
+  descargarExcel(
+    ['📋 PLANTILLA — Completar y luego importar con el botón Importar', '', '', '', '', '', '', ''],
+    [...nota, cols, ...ejemplo],
+    'plantilla_productos_elegance'
+  );
+  mostrarToast('Plantilla descargada. Llénala y usa el botón Importar ✅', 'success');
+}
+
+// ── Importación masiva desde Excel/CSV ── ★ NUEVO
+async function importarProductosDesdeExcel(input) {
+  const archivo = input.files[0];
+  if (!archivo) return;
+  input.value = ''; // reset para permitir subir el mismo archivo de nuevo
+
+  // Leer como texto (funciona para .csv y .xls HTML table)
+  const texto = await archivo.text();
+  let filas = [];
+
+  // Detectar si es CSV o XLS (HTML table)
+  if (archivo.name.endsWith('.csv')) {
+    filas = texto.split('\n')
+      .map(l => l.split(',').map(c => c.replace(/^"|"$/g, '').trim()))
+      .filter(f => f.length > 1 && f[0]);
+  } else {
+    // Parsear tabla HTML del XLS que generamos nosotros
+    const parser  = new DOMParser();
+    const doc     = parser.parseFromString(texto, 'text/html');
+    const trs     = doc.querySelectorAll('tr');
+    trs.forEach(tr => {
+      const celdas = [...tr.querySelectorAll('td,th')].map(c => c.innerText?.trim() || '');
+      if (celdas.length > 1) filas.push(celdas);
+    });
+  }
+
+  // Encontrar la fila de encabezados buscando "Nombre"
+  let headerIdx = filas.findIndex(f =>
+    f.some(c => c.toLowerCase().includes('nombre') && !c.includes('PLANTILLA') && !c.includes('INSTRUC'))
+  );
+  if (headerIdx === -1) {
+    mostrarToast('No se encontró la fila de encabezados en el archivo', 'error'); return;
+  }
+
+  const headers = filas[headerIdx].map(h => h.toLowerCase().trim());
+  const datos   = filas.slice(headerIdx + 1).filter(f => f[0] && f.some(c => c.trim()));
+
+  if (datos.length === 0) {
+    mostrarToast('El archivo no tiene productos para importar', 'error'); return;
+  }
+
+  // Mapear columnas por nombre
+  const col = name => headers.findIndex(h => h.includes(name));
+  const iNombre   = col('nombre');
+  const iDesc     = col('descrip');
+  const iPrecio   = col('precio');
+  const iCosto    = col('costo');
+  const iCat      = col('categ');
+  const iStock    = col('stock');
+  const iItbms    = col('itbms');
+  const iDestacado= col('destac');
+
+  if (iNombre === -1 || iPrecio === -1) {
+    mostrarToast('El archivo debe tener columnas "Nombre" y "Precio Base"', 'error'); return;
+  }
+
+  // Mostrar modal de progreso
+  const modal    = document.getElementById('modalImportar');
+  const msg      = document.getElementById('modalImportarMsg');
+  const barra    = document.getElementById('modalImportarBarra');
+  const contador = document.getElementById('modalImportarContador');
+  modal.style.display = 'flex';
+
+  let ok = 0, errores = 0;
+
+  for (let i = 0; i < datos.length; i++) {
+    const f = datos[i];
+    msg.textContent      = `Creando: ${f[iNombre] || ''}`;
+    barra.style.width    = `${Math.round(((i+1)/datos.length)*100)}%`;
+    contador.textContent = `${i+1} / ${datos.length} productos`;
+
+    const destacadoVal = iDestacado >= 0 ? f[iDestacado] : '';
+    const producto = {
+      nombre:      f[iNombre]   || '',
+      descripcion: iDesc >= 0   ? f[iDesc]    : '',
+      precio_base: iPrecio >= 0 ? parseFloat(f[iPrecio].replace(',','.')) || 0 : 0,
+      costo:       iCosto >= 0  ? parseFloat(f[iCosto].replace(',','.'))  || 0 : 0,
+      categoria:   iCat >= 0    ? f[iCat]     : '',
+      stock:       iStock >= 0  ? parseInt(f[iStock])    || 0 : 0,
+      itbms_pct:   iItbms >= 0  ? parseFloat(f[iItbms])  || 7 : 7,
+      destacado:   /^s[íi]$/i.test(destacadoVal.trim()) || destacadoVal === '1',
+    };
+
+    if (!producto.nombre || !producto.precio_base) { errores++; continue; }
+
+    try {
+      const res = await fetch(`${API}/api/dashboard/productos`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(producto),
+      });
+      const data = await res.json();
+      if (data.success) ok++; else errores++;
+    } catch(e) { errores++; }
+
+    // Pequeña pausa para no saturar el API
+    await new Promise(r => setTimeout(r, 120));
+  }
+
+  modal.style.display = 'none';
+  await cargarProductos();
+
+  const resumen = `✅ ${ok} productos creados` + (errores > 0 ? ` · ⚠️ ${errores} con error` : '');
+  mostrarToast(resumen, ok > 0 ? 'success' : 'error');
+}
+
 function exportarClientesExcel() {
   fetch(`${API}/api/dashboard/clientes`).then(r => r.json()).then(data => {
     if (!data.success) return;
