@@ -884,7 +884,8 @@ async function importarProductosDesdeExcel(input) {
   modal.style.display = 'flex';
 
   let ok = 0, errores = 0;
-  const erroresDetalle = [];
+  const erroresDetalle  = [];
+  const productosCreados = []; // ← captura Nombre + ID asignado
 
   for (let i = 0; i < productosProcesar.length; i++) {
     const p = productosProcesar[i];
@@ -903,6 +904,7 @@ async function importarProductosDesdeExcel(input) {
       const data = await res.json();
       if (data.success) {
         ok++;
+        productosCreados.push({ nombre: producto.nombre, id: data.id });
       } else {
         errores++;
         erroresDetalle.push(`Fila ${_fila} (${producto.nombre}): ${data.error || 'error del servidor'}`);
@@ -925,6 +927,11 @@ async function importarProductosDesdeExcel(input) {
     const detalle = erroresDetalle.slice(0, 3).join('\n');
     const extra   = erroresDetalle.length > 3 ? `\n...y ${erroresDetalle.length - 3} más.` : '';
     alert(`Importación completada:\n✅ ${ok} creados · ⚠️ ${errores} con error\n\n${detalle}${extra}`);
+  }
+
+  // ── MODAL DE IDs — mostrar tabla Nombre | ID asignado ──
+  if (productosCreados.length > 0) {
+    mostrarModalIDs(productosCreados);
   }
 }
 
@@ -1427,4 +1434,392 @@ async function subirImagenCloudinary() {
     mostrarToast('Error de conexión al subir imagen', 'error');
     if (progressDiv) progressDiv.style.display = 'none';
   }
+}
+// ══════════════════════════════════════════════════════════
+// MODAL DE IDs — muestra tabla Nombre | ID tras importación
+// ══════════════════════════════════════════════════════════
+function mostrarModalIDs(lista) {
+  // Construir tabla
+  const filas = lista.map(p =>
+    `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #333;color:#ddd;">${p.nombre}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #333;color:var(--primary,#D4AF37);
+                 font-family:'Orbitron',monospace;font-weight:700;text-align:center;">${p.id}</td>
+    </tr>`
+  ).join('');
+
+  const textoParaCopiar = lista.map(p => `${p.id}\t${p.nombre}`).join('\n');
+
+  const modal = document.createElement('div');
+  modal.id = 'modalIDsImportados';
+  modal.style.cssText =
+    'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.85);' +
+    'display:flex;align-items:center;justify-content:center;padding:16px;';
+
+  modal.innerHTML = `
+    <div style="background:#1a1710;border:1.5px solid var(--primary,#D4AF37);border-radius:16px;
+                width:100%;max-width:520px;max-height:85vh;display:flex;flex-direction:column;
+                box-shadow:0 20px 60px rgba(0,0,0,.6);">
+
+      <!-- Encabezado -->
+      <div style="padding:20px 24px 16px;border-bottom:1px solid #333;flex-shrink:0;">
+        <div style="font-size:24px;margin-bottom:6px;">🎉</div>
+        <h3 style="color:var(--primary,#D4AF37);font-size:15px;margin-bottom:4px;
+                   font-family:'Orbitron',sans-serif;letter-spacing:1px;">
+          IDs ASIGNADOS — ${lista.length} PRODUCTOS
+        </h3>
+        <p style="color:#888;font-size:12px;">
+          Renombra tus fotos con estos IDs antes de ir al Gestor de Medios.
+        </p>
+      </div>
+
+      <!-- Tabla scrollable -->
+      <div style="overflow-y:auto;flex:1;padding:0;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#111;position:sticky;top:0;">
+              <th style="padding:10px 12px;text-align:left;color:#888;font-size:11px;
+                         letter-spacing:2px;text-transform:uppercase;font-weight:500;">Nombre</th>
+              <th style="padding:10px 12px;text-align:center;color:#888;font-size:11px;
+                         letter-spacing:2px;text-transform:uppercase;font-weight:500;">ID</th>
+            </tr>
+          </thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>
+
+      <!-- Botones -->
+      <div style="padding:16px 24px;border-top:1px solid #333;display:flex;gap:10px;flex-shrink:0;">
+        <button onclick="
+          navigator.clipboard.writeText(\`${textoParaCopiar.replace(/`/g, '\\`')}\`)
+            .then(() => mostrarToast('IDs copiados al portapapeles ✅','success'))
+            .catch(() => mostrarToast('Copia manual: selecciona la tabla','error'));
+        " style="flex:1;padding:10px;background:var(--primary,#D4AF37);color:#1a1710;
+                 border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
+          <i class='fas fa-copy'></i> Copiar IDs
+        </button>
+        <button onclick="
+          cambiarTab('medios');
+          document.getElementById('modalIDsImportados').remove();
+        " style="flex:1;padding:10px;background:transparent;color:var(--primary,#D4AF37);
+                 border:1.5px solid var(--primary,#D4AF37);border-radius:8px;
+                 font-weight:700;font-size:13px;cursor:pointer;">
+          <i class='fas fa-images'></i> Ir a Gestor de Medios
+        </button>
+        <button onclick="document.getElementById('modalIDsImportados').remove()"
+                style="padding:10px 14px;background:transparent;color:#888;
+                       border:1px solid #444;border-radius:8px;cursor:pointer;font-size:13px;">
+          ✕
+        </button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+}
+
+// ══════════════════════════════════════════════════════════
+// GESTOR DE MEDIOS — Carga masiva de imágenes por ID
+// ══════════════════════════════════════════════════════════
+
+let colaMedias      = [];  // archivos pendientes de procesar
+let procesandoMedia = false;
+
+function iniciarGestorMedios() {
+  cargarContadorFotos();
+}
+
+function gestorDragOver(e) {
+  e.preventDefault();
+  document.getElementById('zonaArrastre').classList.add('dragover');
+}
+
+function gestorDragLeave() {
+  document.getElementById('zonaArrastre').classList.remove('dragover');
+}
+
+function gestorDrop(e) {
+  e.preventDefault();
+  document.getElementById('zonaArrastre').classList.remove('dragover');
+  procesarArchivosMedia([...e.dataTransfer.files]);
+}
+
+function gestorSeleccionar(input) {
+  procesarArchivosMedia([...input.files]);
+  input.value = '';
+}
+
+function procesarArchivosMedia(archivos) {
+  const FORMATOS  = ['image/jpeg','image/jpg','image/png','image/webp'];
+  const MAX_MB    = 5 * 1024 * 1024;
+  const rechazados = [];
+  const validos    = [];
+
+  // Extraer ID limpio del nombre del archivo
+  function extraerID(nombre) {
+    // Quita extensión, espacios, paréntesis, guiones bajos, números de copia
+    return nombre
+      .replace(/\.[^.]+$/, '')          // quita extensión
+      .replace(/\s*\(\d+\)\s*$/, '')    // quita " (1)", " (2)"...
+      .replace(/[_\-\s]+$/, '')         // quita guiones/espacios al final
+      .trim()
+      .toUpperCase();
+  }
+
+  // Regla de Unicidad — evitar IDs duplicados en la cola actual
+  const idsEnCola = new Set(colaMedias.map(f => extraerID(f.name)));
+
+  archivos.forEach(f => {
+    const id = extraerID(f.name);
+
+    if (!FORMATOS.includes(f.type)) {
+      rechazados.push(`${f.name}: formato no permitido (usa JPG, PNG o WEBP)`);
+      return;
+    }
+    if (f.size > MAX_MB) {
+      rechazados.push(`${f.name}: supera 5MB (${(f.size/1024/1024).toFixed(1)}MB)`);
+      return;
+    }
+    if (!id.match(/^EJ\d+$/i)) {
+      rechazados.push(`${f.name}: el nombre no sigue el formato de ID (ej: EJ001.jpg)`);
+      return;
+    }
+    if (idsEnCola.has(id)) {
+      rechazados.push(`${f.name}: duplicado — ya está en la cola`);
+      return;
+    }
+
+    idsEnCola.add(id);
+    validos.push(f);
+  });
+
+  if (rechazados.length > 0) {
+    mostrarToast(`⚠️ ${rechazados.length} archivo(s) rechazados`, 'error');
+    console.warn('Archivos rechazados:\n' + rechazados.join('\n'));
+  }
+
+  if (validos.length === 0) return;
+
+  colaMedias = [...colaMedias, ...validos];
+  renderizarColaMedia();
+  mostrarToast(`${validos.length} imagen(es) añadidas a la cola`, 'success');
+}
+
+function renderizarColaMedia() {
+  const contenedor = document.getElementById('colaMedias');
+  if (!contenedor) return;
+
+  if (colaMedias.length === 0) {
+    contenedor.innerHTML =
+      '<p style="color:#555;font-size:13px;text-align:center;padding:20px;">La cola está vacía</p>';
+    return;
+  }
+
+  contenedor.innerHTML = colaMedias.map((f, i) => {
+    const id  = f.name.replace(/\.[^.]+$/, '').replace(/\s*\(\d+\)/, '').trim().toUpperCase();
+    const url = URL.createObjectURL(f);
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px;
+                  background:#1e1b14;border-radius:8px;margin-bottom:6px;">
+        <img src="${url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;
+                                  border:1px solid #333;flex-shrink:0;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;color:#ddd;white-space:nowrap;overflow:hidden;
+                      text-overflow:ellipsis;">${f.name}</div>
+          <div style="font-size:11px;color:var(--primary,#D4AF37);font-family:'Orbitron',monospace;">
+            → ${id}
+          </div>
+        </div>
+        <div style="font-size:11px;color:#555;">${(f.size/1024).toFixed(0)}KB</div>
+        <button onclick="quitarDeCola(${i})"
+                style="background:none;border:none;color:#666;cursor:pointer;font-size:16px;
+                       padding:4px;flex-shrink:0;">✕</button>
+      </div>`;
+  }).join('');
+
+  document.getElementById('btnSubirMedia').disabled = procesandoMedia;
+}
+
+function quitarDeCola(idx) {
+  colaMedias.splice(idx, 1);
+  renderizarColaMedia();
+}
+
+function limpiarColaMedia() {
+  colaMedias = [];
+  renderizarColaMedia();
+}
+
+async function iniciarSubidaMasiva() {
+  if (colaMedias.length === 0) {
+    mostrarToast('La cola está vacía. Arrastra fotos primero.', 'warning');
+    return;
+  }
+  if (procesandoMedia) return;
+  procesandoMedia = true;
+
+  const btnSubir   = document.getElementById('btnSubirMedia');
+  const barraMedia = document.getElementById('barraMediaProgreso');
+  const pctMedia   = document.getElementById('pctMedia');
+  const msgMedia   = document.getElementById('msgMedia');
+  if (btnSubir) btnSubir.disabled = true;
+
+  let exitos = 0, omitidos = 0, erroresMedia = 0;
+  const incidencias = [];
+
+  // Cargar lista de productos actuales para validar IDs y No-Sobrescritura
+  await cargarProductos();
+  const mapaProductos = {};
+  productosOriginales.forEach(p => {
+    mapaProductos[p.id.toUpperCase()] = p;
+  });
+
+  for (let i = 0; i < colaMedias.length; i++) {
+    const f  = colaMedias[i];
+    const id = f.name.replace(/\.[^.]+$/, '')
+                     .replace(/\s*\(\d+\)/g, '')
+                     .replace(/[_\-\s]+$/, '')
+                     .trim()
+                     .toUpperCase();
+
+    const pct = Math.round(((i + 1) / colaMedias.length) * 100);
+    if (barraMedia) barraMedia.style.width = pct + '%';
+    if (pctMedia)   pctMedia.textContent   = pct + '%';
+    if (msgMedia)   msgMedia.textContent   = `Procesando: ${f.name}`;
+
+    // Validar que el ID existe en la DB
+    const producto = mapaProductos[id];
+    if (!producto) {
+      erroresMedia++;
+      incidencias.push({ archivo: f.name, estado: 'error', razon: `ID ${id} no existe en el sistema` });
+      continue;
+    }
+
+    // Regla de No-Sobrescritura — si ya tiene imagen, omitir
+    if (producto.imagen_url && producto.imagen_url.trim() !== '') {
+      omitidos++;
+      incidencias.push({ archivo: f.name, estado: 'omitida', razon: `${id} ya tiene foto asignada` });
+      continue;
+    }
+
+    // Subir a Cloudinary
+    try {
+      const formData = new FormData();
+      formData.append('file',    f);
+      formData.append('carpeta', 'minegocio');
+
+      const resCloud = await fetch(`${API}/api/cloudinary`, { method: 'POST', body: formData });
+      const dataCloud = await resCloud.json();
+
+      if (!dataCloud.success) throw new Error(dataCloud.error || 'Error Cloudinary');
+
+      // Actualizar imagen_url en D1
+      const resPut = await fetch(`${API}/api/dashboard/productos`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ ...producto, imagen_url: dataCloud.url }),
+      });
+      const dataPut = await resPut.json();
+
+      if (dataPut.success) {
+        exitos++;
+        incidencias.push({ archivo: f.name, estado: 'ok', razon: `Vinculada a ${id}` });
+        // Actualizar el mapa local para evitar que una segunda foto del mismo ID lo sobrescriba
+        mapaProductos[id] = { ...producto, imagen_url: dataCloud.url };
+      } else {
+        throw new Error(dataPut.error || 'Error al guardar URL');
+      }
+    } catch(e) {
+      erroresMedia++;
+      incidencias.push({ archivo: f.name, estado: 'error', razon: e.message });
+    }
+
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  procesandoMedia = false;
+  colaMedias = [];
+  await cargarProductos();
+  cargarContadorFotos();
+  renderizarColaMedia();
+  if (btnSubir) btnSubir.disabled = false;
+  if (msgMedia) msgMedia.textContent = 'Proceso completado';
+
+  // Mostrar reporte final
+  mostrarReporteMedia(exitos, omitidos, erroresMedia, incidencias);
+}
+
+function mostrarReporteMedia(exitos, omitidos, errores, incidencias) {
+  const iconoEstado = e => e.estado === 'ok' ? '✅' : e.estado === 'omitida' ? '⏭️' : '❌';
+  const colorEstado = e => e.estado === 'ok'
+    ? 'color:#4caf50'
+    : e.estado === 'omitida'
+      ? 'color:#888'
+      : 'color:var(--danger,#c62828)';
+
+  const filas = incidencias.map(e => `
+    <tr>
+      <td style="padding:6px 10px;border-bottom:1px solid #222;font-size:12px;color:#bbb;">
+        ${iconoEstado(e)} ${e.archivo}
+      </td>
+      <td style="padding:6px 10px;border-bottom:1px solid #222;font-size:12px;${colorEstado(e)};">
+        ${e.razon}
+      </td>
+    </tr>`).join('');
+
+  const modal = document.createElement('div');
+  modal.id = 'modalReporteMedia';
+  modal.style.cssText =
+    'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.85);' +
+    'display:flex;align-items:center;justify-content:center;padding:16px;';
+
+  modal.innerHTML = `
+    <div style="background:#1a1710;border:1.5px solid var(--primary,#D4AF37);border-radius:16px;
+                width:100%;max-width:560px;max-height:85vh;display:flex;flex-direction:column;
+                box-shadow:0 20px 60px rgba(0,0,0,.6);">
+
+      <div style="padding:20px 24px 16px;border-bottom:1px solid #333;flex-shrink:0;">
+        <h3 style="color:var(--primary,#D4AF37);font-family:'Orbitron',sans-serif;
+                   font-size:14px;letter-spacing:1px;margin-bottom:12px;">
+          REPORTE DE CARGA MASIVA
+        </h3>
+        <div style="display:flex;gap:16px;">
+          <div style="text-align:center;flex:1;background:#0d2918;border-radius:8px;padding:10px;">
+            <div style="font-size:22px;font-weight:700;color:#4caf50;">${exitos}</div>
+            <div style="font-size:11px;color:#888;">✅ Vinculadas</div>
+          </div>
+          <div style="text-align:center;flex:1;background:#1a1a1a;border-radius:8px;padding:10px;">
+            <div style="font-size:22px;font-weight:700;color:#888;">${omitidos}</div>
+            <div style="font-size:11px;color:#888;">⏭️ Omitidas</div>
+          </div>
+          <div style="text-align:center;flex:1;background:#2d0d0d;border-radius:8px;padding:10px;">
+            <div style="font-size:22px;font-weight:700;color:var(--danger,#c62828);">${errores}</div>
+            <div style="font-size:11px;color:#888;">❌ Errores</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="overflow-y:auto;flex:1;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#111;position:sticky;top:0;">
+              <th style="padding:8px 10px;text-align:left;color:#555;font-size:11px;
+                         letter-spacing:1px;text-transform:uppercase;">Archivo</th>
+              <th style="padding:8px 10px;text-align:left;color:#555;font-size:11px;
+                         letter-spacing:1px;text-transform:uppercase;">Estado</th>
+            </tr>
+          </thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>
+
+      <div style="padding:16px 24px;border-top:1px solid #333;flex-shrink:0;">
+        <button onclick="document.getElementById('modalReporteMedia').remove()"
+                style="width:100%;padding:11px;background:var(--primary,#D4AF37);color:#1a1710;
+                       border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
+          Cerrar Reporte
+        </button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
 }
