@@ -11,7 +11,7 @@ export async function onRequestGet(context) {
     if (buscar) where += ` AND (nombre LIKE '%${buscar}%' OR id LIKE '%${buscar}%' OR categoria LIKE '%${buscar}%')`;
 
     const { results } = await env.elegance_db.prepare(`
-      SELECT * FROM productos ${where} ORDER BY categoria, nombre
+      SELECT * FROM productos ${where} ORDER BY id ASC
     `).all();
 
     return Response.json({ success: true, productos: results });
