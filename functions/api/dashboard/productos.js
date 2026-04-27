@@ -7,7 +7,7 @@ export async function onRequestGet(context) {
   const buscar = url.searchParams.get('buscar') || '';
 
   try {
-    let where = 'WHERE 1=1';
+    let where = 'WHERE activo = 1';
     if (buscar) where += ` AND (nombre LIKE '%${buscar}%' OR id LIKE '%${buscar}%' OR categoria LIKE '%${buscar}%')`;
 
     const { results } = await env.elegance_db.prepare(`
