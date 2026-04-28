@@ -190,81 +190,75 @@
       </div>
     </div>
 
-    </div>
-
-    <!-- TAB: GESTOR DE MEDIOS -->
+    <!-- TAB: MEDIOS -->
     <div id="tab-medios" class="tab-content">
       <div class="card">
         <div class="card-header">
           <h3 class="card-title"><i class="fas fa-images"></i> Gestor de Medios — Carga Masiva de Fotos</h3>
-          <div style="display:flex;align-items:center;gap:12px;">
-            <span style="font-size:12px;color:#888;">
-              <i class="fas fa-info-circle"></i> Nombra tus fotos como el ID del producto (ej: <code style="color:var(--primary)">EJ001.jpg</code>)
-            </span>
-            <div id="barraFotos" style="display:none;min-width:160px;">
-              <div style="font-size:11px;color:#888;margin-bottom:3px;">
-                Cloudinary: <span id="contadorFotos">0/200</span>
-              </div>
-              <div style="background:#333;border-radius:4px;height:6px;overflow:hidden;">
-                <div id="progresoFotos" style="height:100%;width:0%;background:var(--success);transition:width .3s;border-radius:4px;"></div>
-              </div>
-              <div id="mensajeFotos" style="font-size:10px;color:#666;margin-top:2px;"></div>
-            </div>
-          </div>
+          <span style="font-size:12px;color:#888;">
+            Nombra cada foto con el ID del producto: <code style="color:var(--primary)">EJ001.jpg</code>
+          </span>
         </div>
 
         <!-- Zona de arrastre -->
         <div id="zonaArrastre"
-             ondragover="gestorDragOver(event)"
-             ondragleave="gestorDragLeave()"
-             ondrop="gestorDrop(event)"
-             style="border:2px dashed #444;border-radius:12px;padding:40px 20px;
-                    text-align:center;cursor:pointer;transition:all .25s;margin-bottom:20px;
-                    background:rgba(212,175,55,.03);"
-             onmouseenter="this.style.borderColor='var(--primary)'"
-             onmouseleave="this.style.borderColor='#444'">
-          <div style="font-size:40px;margin-bottom:10px;">🖼️</div>
-          <p style="color:#aaa;font-size:15px;margin-bottom:6px;">Arrastra tus fotos aquí</p>
-          <p style="color:#555;font-size:12px;margin-bottom:16px;">JPG, PNG, WEBP · Máx 5MB por foto · Nombradas como EJ001.jpg</p>
-          <label style="display:inline-block;padding:10px 24px;background:var(--primary);
-                         color:#1a1710;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;">
-            <i class="fas fa-folder-open"></i> Seleccionar fotos
-            <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp"
-                   multiple style="display:none" onchange="gestorSeleccionar(this)">
-          </label>
+             ondragover="event.preventDefault();event.stopPropagation();this.style.borderColor='var(--primary)';this.style.background='rgba(212,175,55,.08)';"
+             ondragleave="this.style.borderColor='#444';this.style.background='rgba(212,175,55,.03)';"
+             ondrop="event.preventDefault();event.stopPropagation();this.style.borderColor='#444';this.style.background='rgba(212,175,55,.03)';procesarArchivosMedia([...event.dataTransfer.files]);"
+             style="border:2px dashed #444;border-radius:12px;padding:48px 20px;text-align:center;
+                    cursor:pointer;transition:all .2s;margin-bottom:20px;background:rgba(212,175,55,.03);"
+             onclick="document.getElementById('inputFotosMedias').click();">
+          <div style="font-size:36px;margin-bottom:10px;pointer-events:none;">🖼️</div>
+          <p style="color:#aaa;font-size:15px;margin-bottom:6px;pointer-events:none;">
+            Arrastra tus fotos aquí o haz clic para seleccionar
+          </p>
+          <p style="color:#555;font-size:12px;pointer-events:none;">
+            JPG, PNG, WEBP · Máx 5MB por foto · Nombre = ID del producto (EJ001.jpg)
+          </p>
         </div>
 
-        <!-- Cola de archivos -->
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <h4 style="color:#aaa;font-size:13px;font-weight:500;">
-            <i class="fas fa-list"></i> Cola de carga
-            <span id="totalCola" style="color:var(--primary);margin-left:6px;"></span>
-          </h4>
+        <!-- Input file oculto — separado del label para evitar bugs de navegador -->
+        <input type="file" id="inputFotosMedias" accept="image/jpeg,image/jpg,image/png,image/webp"
+               multiple style="display:none"
+               onchange="if(this.files.length>0){procesarArchivosMedia([...this.files]);this.value='';}">
+
+        <!-- Botón alternativo explícito -->
+        <div style="text-align:center;margin-bottom:20px;">
+          <button onclick="document.getElementById('inputFotosMedias').click()"
+                  style="padding:10px 28px;background:var(--primary);color:#1a1710;border:none;
+                         border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
+            <i class="fas fa-folder-open"></i> Seleccionar fotos
+          </button>
           <button onclick="limpiarColaMedia()"
-                  style="background:none;border:1px solid #444;color:#888;padding:5px 12px;
-                         border-radius:6px;cursor:pointer;font-size:12px;">
+                  style="margin-left:10px;padding:10px 20px;background:transparent;color:#888;
+                         border:1px solid #444;border-radius:8px;cursor:pointer;font-size:13px;">
             <i class="fas fa-trash"></i> Limpiar cola
           </button>
         </div>
-        <div id="colaMedias" style="max-height:280px;overflow-y:auto;margin-bottom:16px;">
+
+        <!-- Cola de archivos -->
+        <h4 style="color:#aaa;font-size:13px;font-weight:500;margin-bottom:10px;">
+          <i class="fas fa-list"></i> Cola de carga
+        </h4>
+        <div id="colaMedias" style="max-height:300px;overflow-y:auto;margin-bottom:16px;">
           <p style="color:#555;font-size:13px;text-align:center;padding:20px;">La cola está vacía</p>
         </div>
 
-        <!-- Barra de progreso de subida -->
+        <!-- Barra de progreso -->
         <div style="background:#222;border-radius:8px;height:12px;overflow:hidden;margin-bottom:6px;">
           <div id="barraMediaProgreso" style="height:100%;width:0%;background:var(--primary);
                transition:width .4s;border-radius:8px;"></div>
         </div>
         <div style="display:flex;justify-content:space-between;margin-bottom:16px;">
-          <span id="msgMedia" style="font-size:12px;color:#666;">Listo para procesar</span>
-          <span id="pctMedia" style="font-size:12px;color:var(--primary);font-weight:700;">0%</span>
+          <span id="msgMedia"  style="font-size:12px;color:#666;">Listo para procesar</span>
+          <span id="pctMedia"  style="font-size:12px;color:var(--primary);font-weight:700;">0%</span>
         </div>
 
         <!-- Botón principal -->
         <button id="btnSubirMedia" onclick="iniciarSubidaMasiva()"
-                style="width:100%;padding:14px;background:var(--primary);color:#1a1710;
-                       border:none;border-radius:10px;font-weight:700;font-size:14px;
-                       cursor:pointer;letter-spacing:.5px;transition:opacity .2s;">
+                style="width:100%;padding:14px;background:var(--primary);color:#1a1710;border:none;
+                       border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;
+                       letter-spacing:.5px;">
           <i class="fas fa-rocket"></i> Iniciar Carga Masiva
         </button>
       </div>
