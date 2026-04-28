@@ -812,11 +812,10 @@ async function importarProductosDesdeExcel(input) {
     // ── ERROR 6: Fila vacía — ignorar silenciosamente
     if (!nombre && !precioRaw) return;
 
-    // ── Ignorar filas de pie de página e instrucciones de la plantilla
+    // ── Ignorar filas de pie de página e instrucciones
     const esFilaSistema = nombre.toLowerCase().includes('elegance jewelry') ||
                           nombre.toLowerCase().includes('generado el') ||
-                          nombre.startsWith('⚠') ||
-                          nombre.startsWith('📋') ||
+                          nombre.startsWith('⚠') || nombre.startsWith('📋') ||
                           nombre.toLowerCase().includes('instruc') ||
                           nombre.toLowerCase().includes('plantilla');
     if (esFilaSistema) return;
@@ -894,7 +893,7 @@ async function importarProductosDesdeExcel(input) {
 
   let ok = 0, errores = 0;
   const erroresDetalle   = [];
-  const productosCreados = []; // ← captura Nombre + ID para el modal
+  const productosCreados = [];
 
   for (let i = 0; i < productosProcesar.length; i++) {
     const p = productosProcesar[i];
@@ -938,86 +937,7 @@ async function importarProductosDesdeExcel(input) {
     alert(`Importación completada:\n✅ ${ok} creados · ⚠️ ${errores} con error\n\n${detalle}${extra}`);
   }
 
-  // ── MODAL DE IDs ─────────────────────────────────────────
-  if (productosCreados.length > 0) {
-    mostrarModalIDs(productosCreados);
-  }
-}
-
-// ── MODAL DE IDs — tabla Nombre | ID tras importación ─────
-function mostrarModalIDs(lista) {
-  const filas = lista.map(p =>
-    `<tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #2a2520;color:#ddd;font-size:13px;">
-        ${p.nombre}
-      </td>
-      <td style="padding:8px 12px;border-bottom:1px solid #2a2520;text-align:center;
-                 color:var(--primary,#D4AF37);font-family:'Orbitron',monospace;
-                 font-weight:700;font-size:13px;">
-        ${p.id}
-      </td>
-    </tr>`
-  ).join('');
-
-  const textoParaCopiar = lista.map(p => `${p.id}\t${p.nombre}`).join('\n');
-
-  const modal = document.createElement('div');
-  modal.id = 'modalIDsImportados';
-  modal.style.cssText =
-    'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.85);' +
-    'display:flex;align-items:center;justify-content:center;padding:16px;';
-
-  modal.innerHTML = `
-    <div style="background:#1a1710;border:1.5px solid var(--primary,#D4AF37);border-radius:16px;
-                width:100%;max-width:520px;max-height:85vh;display:flex;flex-direction:column;
-                box-shadow:0 20px 60px rgba(0,0,0,.6);">
-      <div style="padding:20px 24px 16px;border-bottom:1px solid #2a2520;flex-shrink:0;">
-        <div style="font-size:22px;margin-bottom:6px;">🎉</div>
-        <h3 style="color:var(--primary,#D4AF37);font-size:15px;margin-bottom:4px;
-                   font-family:'Orbitron',sans-serif;letter-spacing:1px;">
-          IDs ASIGNADOS — ${lista.length} PRODUCTO${lista.length > 1 ? 'S' : ''}
-        </h3>
-        <p style="color:#888;font-size:12px;">
-          Renombra tus fotos con estos IDs antes de ir al Gestor de Medios.
-        </p>
-      </div>
-      <div style="overflow-y:auto;flex:1;">
-        <table style="width:100%;border-collapse:collapse;">
-          <thead>
-            <tr style="background:#111;position:sticky;top:0;">
-              <th style="padding:10px 12px;text-align:left;color:#555;font-size:11px;
-                         letter-spacing:2px;text-transform:uppercase;font-weight:500;">Nombre</th>
-              <th style="padding:10px 12px;text-align:center;color:#555;font-size:11px;
-                         letter-spacing:2px;text-transform:uppercase;font-weight:500;">ID</th>
-            </tr>
-          </thead>
-          <tbody>${filas}</tbody>
-        </table>
-      </div>
-      <div style="padding:16px 24px;border-top:1px solid #2a2520;display:flex;gap:10px;flex-shrink:0;">
-        <button onclick="
-          navigator.clipboard.writeText('${textoParaCopiar.replace(/'/g, "\\'")}')
-            .then(()=>mostrarToast('IDs copiados al portapapeles ✅','success'))
-            .catch(()=>mostrarToast('No se pudo copiar','error'));
-        " style="flex:1;padding:10px;background:var(--primary,#D4AF37);color:#1a1710;
-                 border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
-          <i class='fas fa-copy'></i> Copiar IDs
-        </button>
-        <button onclick="cambiarTab('medios');document.getElementById('modalIDsImportados').remove();"
-                style="flex:1;padding:10px;background:transparent;color:var(--primary,#D4AF37);
-                       border:1.5px solid var(--primary,#D4AF37);border-radius:8px;
-                       font-weight:700;font-size:13px;cursor:pointer;">
-          <i class='fas fa-images'></i> Ir a Medios
-        </button>
-        <button onclick="document.getElementById('modalIDsImportados').remove()"
-                style="padding:10px 14px;background:transparent;color:#888;
-                       border:1px solid #444;border-radius:8px;cursor:pointer;font-size:16px;">
-          ✕
-        </button>
-      </div>
-    </div>`;
-
-  document.body.appendChild(modal);
+  if (productosCreados.length > 0) mostrarModalIDs(productosCreados);
 }
 
 function exportarClientesExcel() {
@@ -1519,4 +1439,325 @@ async function subirImagenCloudinary() {
     mostrarToast('Error de conexión al subir imagen', 'error');
     if (progressDiv) progressDiv.style.display = 'none';
   }
+}
+// ══════════════════════════════════════════════════════════
+// GESTOR DE MEDIOS — Carga masiva de imágenes por ID
+// ══════════════════════════════════════════════════════════
+
+let colaMedias      = [];
+let procesandoMedia = false;
+
+function iniciarGestorMedios() {
+  renderizarColaMedia();
+}
+
+function procesarArchivosMedia(archivos) {
+  if (!archivos || archivos.length === 0) return;
+
+  const FORMATOS = ['image/jpeg','image/jpg','image/png','image/webp'];
+  const MAX_MB   = 5 * 1024 * 1024;
+  const rechazados = [];
+
+  function extraerID(nombre) {
+    return nombre
+      .replace(/\.[^.]+$/, '')
+      .replace(/\s*\(\d+\)\s*/g, '')
+      .replace(/[_\-\s]+$/, '')
+      .trim()
+      .toUpperCase();
+  }
+
+  const idsEnCola = new Set(colaMedias.map(f => extraerID(f.name)));
+
+  archivos.forEach(f => {
+    const id = extraerID(f.name);
+    if (!FORMATOS.includes(f.type)) {
+      rechazados.push(`${f.name}: formato no permitido`);
+      return;
+    }
+    if (f.size > MAX_MB) {
+      rechazados.push(`${f.name}: supera 5MB`);
+      return;
+    }
+    if (!id.match(/^EJ\d+$/i)) {
+      rechazados.push(`${f.name}: nombre debe ser tipo EJ001.jpg`);
+      return;
+    }
+    if (idsEnCola.has(id)) {
+      rechazados.push(`${f.name}: duplicado en cola`);
+      return;
+    }
+    idsEnCola.add(id);
+    colaMedias.push(f);
+  });
+
+  if (rechazados.length > 0) {
+    mostrarToast(`⚠️ ${rechazados.length} archivo(s) rechazados: ${rechazados[0]}`, 'error');
+  }
+
+  renderizarColaMedia();
+
+  if (colaMedias.length > 0) {
+    mostrarToast(`✅ ${colaMedias.length} imagen(es) en cola`, 'success');
+  }
+}
+
+function renderizarColaMedia() {
+  const contenedor = document.getElementById('colaMedias');
+  if (!contenedor) return;
+
+  if (colaMedias.length === 0) {
+    contenedor.innerHTML =
+      '<p style="color:#555;font-size:13px;text-align:center;padding:20px;">La cola está vacía</p>';
+    return;
+  }
+
+  contenedor.innerHTML = colaMedias.map((f, i) => {
+    const id  = f.name.replace(/\.[^.]+$/, '').replace(/\s*\(\d+\)/g, '').trim().toUpperCase();
+    const url = URL.createObjectURL(f);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px;
+                        background:#1e1b14;border-radius:8px;margin-bottom:6px;">
+      <img src="${url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;
+                                border:1px solid #333;flex-shrink:0;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;color:#ddd;white-space:nowrap;overflow:hidden;
+                    text-overflow:ellipsis;">${f.name}</div>
+        <div style="font-size:11px;color:var(--primary,#D4AF37);font-family:'Orbitron',monospace;">
+          → ${id}
+        </div>
+      </div>
+      <div style="font-size:11px;color:#555;flex-shrink:0;">${(f.size/1024).toFixed(0)}KB</div>
+      <button onclick="quitarDeCola(${i})"
+              style="background:none;border:none;color:#666;cursor:pointer;
+                     font-size:18px;padding:4px;flex-shrink:0;">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function quitarDeCola(idx) {
+  colaMedias.splice(idx, 1);
+  renderizarColaMedia();
+}
+
+function limpiarColaMedia() {
+  colaMedias = [];
+  renderizarColaMedia();
+  mostrarToast('Cola limpiada', 'success');
+}
+
+async function iniciarSubidaMasiva() {
+  if (colaMedias.length === 0) {
+    mostrarToast('La cola está vacía. Selecciona fotos primero.', 'error');
+    return;
+  }
+  if (procesandoMedia) return;
+  procesandoMedia = true;
+
+  const btnSubir   = document.getElementById('btnSubirMedia');
+  const barraMedia = document.getElementById('barraMediaProgreso');
+  const pctMedia   = document.getElementById('pctMedia');
+  const msgMedia   = document.getElementById('msgMedia');
+  if (btnSubir) btnSubir.disabled = true;
+
+  let exitos = 0, omitidos = 0, erroresMedia = 0;
+  const incidencias = [];
+
+  await cargarProductos();
+  const mapaProductos = {};
+  productosOriginales.forEach(p => {
+    mapaProductos[p.id.toUpperCase()] = p;
+  });
+
+  for (let i = 0; i < colaMedias.length; i++) {
+    const f  = colaMedias[i];
+    const id = f.name.replace(/\.[^.]+$/, '')
+                     .replace(/\s*\(\d+\)/g, '')
+                     .replace(/[_\-\s]+$/, '')
+                     .trim()
+                     .toUpperCase();
+
+    const pct = Math.round(((i + 1) / colaMedias.length) * 100);
+    if (barraMedia) barraMedia.style.width = pct + '%';
+    if (pctMedia)   pctMedia.textContent   = pct + '%';
+    if (msgMedia)   msgMedia.textContent   = `Procesando: ${f.name}`;
+
+    const producto = mapaProductos[id];
+    if (!producto) {
+      erroresMedia++;
+      incidencias.push({ archivo: f.name, estado: 'error', razon: `ID ${id} no existe en el sistema` });
+      continue;
+    }
+
+    if (producto.imagen_url && producto.imagen_url.trim() !== '') {
+      omitidos++;
+      incidencias.push({ archivo: f.name, estado: 'omitida', razon: `${id} ya tiene foto asignada` });
+      continue;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('file',    f);
+      formData.append('carpeta', 'minegocio');
+
+      const resCloud  = await fetch(`${API}/api/cloudinary`, { method: 'POST', body: formData });
+      const dataCloud = await resCloud.json();
+      if (!dataCloud.success) throw new Error(dataCloud.error || 'Error Cloudinary');
+
+      const resPut  = await fetch(`${API}/api/dashboard/productos`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ ...producto, imagen_url: dataCloud.url }),
+      });
+      const dataPut = await resPut.json();
+      if (!dataPut.success) throw new Error(dataPut.error || 'Error al guardar URL');
+
+      exitos++;
+      incidencias.push({ archivo: f.name, estado: 'ok', razon: `Vinculada a ${id}` });
+      mapaProductos[id] = { ...producto, imagen_url: dataCloud.url };
+
+    } catch(e) {
+      erroresMedia++;
+      incidencias.push({ archivo: f.name, estado: 'error', razon: e.message });
+    }
+
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  procesandoMedia = false;
+  colaMedias = [];
+  await cargarProductos();
+  renderizarColaMedia();
+  if (barraMedia) barraMedia.style.width = '0%';
+  if (pctMedia)   pctMedia.textContent   = '0%';
+  if (msgMedia)   msgMedia.textContent   = 'Proceso completado';
+  if (btnSubir)   btnSubir.disabled      = false;
+
+  mostrarReporteMedia(exitos, omitidos, erroresMedia, incidencias);
+}
+
+function mostrarReporteMedia(exitos, omitidos, errores, incidencias) {
+  const filas = incidencias.map(e => {
+    const icono = e.estado === 'ok' ? '✅' : e.estado === 'omitida' ? '⏭️' : '❌';
+    const color = e.estado === 'ok' ? '#4caf50' : e.estado === 'omitida' ? '#888' : '#c62828';
+    return `<tr>
+      <td style="padding:6px 10px;border-bottom:1px solid #222;font-size:12px;color:#bbb;">
+        ${icono} ${e.archivo}
+      </td>
+      <td style="padding:6px 10px;border-bottom:1px solid #222;font-size:12px;color:${color};">
+        ${e.razon}
+      </td>
+    </tr>`;
+  }).join('');
+
+  const modal = document.createElement('div');
+  modal.id = 'modalReporteMedia';
+  modal.style.cssText =
+    'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.85);' +
+    'display:flex;align-items:center;justify-content:center;padding:16px;';
+
+  modal.innerHTML = `
+    <div style="background:#1a1710;border:1.5px solid var(--primary,#D4AF37);border-radius:16px;
+                width:100%;max-width:560px;max-height:85vh;display:flex;flex-direction:column;">
+      <div style="padding:20px 24px 16px;border-bottom:1px solid #333;flex-shrink:0;">
+        <h3 style="color:var(--primary,#D4AF37);font-family:'Orbitron',sans-serif;
+                   font-size:14px;letter-spacing:1px;margin-bottom:12px;">REPORTE DE CARGA MASIVA</h3>
+        <div style="display:flex;gap:12px;">
+          <div style="text-align:center;flex:1;background:#0d2918;border-radius:8px;padding:10px;">
+            <div style="font-size:22px;font-weight:700;color:#4caf50;">${exitos}</div>
+            <div style="font-size:11px;color:#888;">✅ Vinculadas</div>
+          </div>
+          <div style="text-align:center;flex:1;background:#1a1a1a;border-radius:8px;padding:10px;">
+            <div style="font-size:22px;font-weight:700;color:#888;">${omitidos}</div>
+            <div style="font-size:11px;color:#888;">⏭️ Omitidas</div>
+          </div>
+          <div style="text-align:center;flex:1;background:#2d0d0d;border-radius:8px;padding:10px;">
+            <div style="font-size:22px;font-weight:700;color:#c62828;">${errores}</div>
+            <div style="font-size:11px;color:#888;">❌ Errores</div>
+          </div>
+        </div>
+      </div>
+      <div style="overflow-y:auto;flex:1;">
+        <table style="width:100%;border-collapse:collapse;">${filas}</table>
+      </div>
+      <div style="padding:16px 24px;border-top:1px solid #333;flex-shrink:0;">
+        <button onclick="document.getElementById('modalReporteMedia').remove()"
+                style="width:100%;padding:11px;background:var(--primary,#D4AF37);color:#1a1710;
+                       border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
+          Cerrar Reporte
+        </button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+}
+
+// ── MODAL DE IDs tras importación masiva Excel ─────────────
+function mostrarModalIDs(lista) {
+  const filas = lista.map(p =>
+    `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #2a2520;color:#ddd;font-size:13px;">
+        ${p.nombre}
+      </td>
+      <td style="padding:8px 12px;border-bottom:1px solid #2a2520;text-align:center;
+                 color:var(--primary,#D4AF37);font-family:'Orbitron',monospace;
+                 font-weight:700;font-size:13px;">
+        ${p.id}
+      </td>
+    </tr>`
+  ).join('');
+
+  const textoParaCopiar = lista.map(p => p.id + '\t' + p.nombre).join('\n');
+
+  const modal = document.createElement('div');
+  modal.id = 'modalIDsImportados';
+  modal.style.cssText =
+    'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.85);' +
+    'display:flex;align-items:center;justify-content:center;padding:16px;';
+
+  modal.innerHTML = `
+    <div style="background:#1a1710;border:1.5px solid var(--primary,#D4AF37);border-radius:16px;
+                width:100%;max-width:520px;max-height:85vh;display:flex;flex-direction:column;">
+      <div style="padding:20px 24px 16px;border-bottom:1px solid #2a2520;flex-shrink:0;">
+        <div style="font-size:22px;margin-bottom:6px;">🎉</div>
+        <h3 style="color:var(--primary,#D4AF37);font-size:15px;margin-bottom:4px;
+                   font-family:'Orbitron',sans-serif;letter-spacing:1px;">
+          IDs ASIGNADOS — ${lista.length} PRODUCTO${lista.length > 1 ? 'S' : ''}
+        </h3>
+        <p style="color:#888;font-size:12px;">Renombra tus fotos con estos IDs antes de ir al Gestor de Medios.</p>
+      </div>
+      <div style="overflow-y:auto;flex:1;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#111;position:sticky;top:0;">
+              <th style="padding:10px 12px;text-align:left;color:#555;font-size:11px;
+                         letter-spacing:2px;text-transform:uppercase;font-weight:500;">Nombre</th>
+              <th style="padding:10px 12px;text-align:center;color:#555;font-size:11px;
+                         letter-spacing:2px;text-transform:uppercase;font-weight:500;">ID</th>
+            </tr>
+          </thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>
+      <div style="padding:16px 24px;border-top:1px solid #2a2520;display:flex;gap:10px;flex-shrink:0;">
+        <button onclick="
+          navigator.clipboard.writeText(decodeURIComponent('${encodeURIComponent(textoParaCopiar)}'))
+            .then(()=>mostrarToast('IDs copiados ✅','success'))
+            .catch(()=>mostrarToast('No se pudo copiar','error'));
+        " style="flex:1;padding:10px;background:var(--primary,#D4AF37);color:#1a1710;
+                 border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
+          <i class='fas fa-copy'></i> Copiar IDs
+        </button>
+        <button onclick="cambiarTab('medios');document.getElementById('modalIDsImportados').remove();"
+                style="flex:1;padding:10px;background:transparent;color:var(--primary,#D4AF37);
+                       border:1.5px solid var(--primary,#D4AF37);border-radius:8px;
+                       font-weight:700;font-size:13px;cursor:pointer;">
+          <i class='fas fa-images'></i> Ir a Medios
+        </button>
+        <button onclick="document.getElementById('modalIDsImportados').remove()"
+                style="padding:10px 14px;background:transparent;color:#888;
+                       border:1px solid #444;border-radius:8px;cursor:pointer;font-size:16px;">✕</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
 }
