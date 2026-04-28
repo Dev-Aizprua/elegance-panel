@@ -893,7 +893,8 @@ async function importarProductosDesdeExcel(input) {
   modal.style.display = 'flex';
 
   let ok = 0, errores = 0;
-  const erroresDetalle = [];
+  const erroresDetalle   = [];
+  const productosCreados = []; // ← captura Nombre + ID para el modal
 
   for (let i = 0; i < productosProcesar.length; i++) {
     const p = productosProcesar[i];
@@ -912,6 +913,7 @@ async function importarProductosDesdeExcel(input) {
       const data = await res.json();
       if (data.success) {
         ok++;
+        productosCreados.push({ nombre: producto.nombre, id: data.id });
       } else {
         errores++;
         erroresDetalle.push(`Fila ${_fila} (${producto.nombre}): ${data.error || 'error del servidor'}`);
@@ -935,6 +937,87 @@ async function importarProductosDesdeExcel(input) {
     const extra   = erroresDetalle.length > 3 ? `\n...y ${erroresDetalle.length - 3} más.` : '';
     alert(`Importación completada:\n✅ ${ok} creados · ⚠️ ${errores} con error\n\n${detalle}${extra}`);
   }
+
+  // ── MODAL DE IDs ─────────────────────────────────────────
+  if (productosCreados.length > 0) {
+    mostrarModalIDs(productosCreados);
+  }
+}
+
+// ── MODAL DE IDs — tabla Nombre | ID tras importación ─────
+function mostrarModalIDs(lista) {
+  const filas = lista.map(p =>
+    `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #2a2520;color:#ddd;font-size:13px;">
+        ${p.nombre}
+      </td>
+      <td style="padding:8px 12px;border-bottom:1px solid #2a2520;text-align:center;
+                 color:var(--primary,#D4AF37);font-family:'Orbitron',monospace;
+                 font-weight:700;font-size:13px;">
+        ${p.id}
+      </td>
+    </tr>`
+  ).join('');
+
+  const textoParaCopiar = lista.map(p => `${p.id}\t${p.nombre}`).join('\n');
+
+  const modal = document.createElement('div');
+  modal.id = 'modalIDsImportados';
+  modal.style.cssText =
+    'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.85);' +
+    'display:flex;align-items:center;justify-content:center;padding:16px;';
+
+  modal.innerHTML = `
+    <div style="background:#1a1710;border:1.5px solid var(--primary,#D4AF37);border-radius:16px;
+                width:100%;max-width:520px;max-height:85vh;display:flex;flex-direction:column;
+                box-shadow:0 20px 60px rgba(0,0,0,.6);">
+      <div style="padding:20px 24px 16px;border-bottom:1px solid #2a2520;flex-shrink:0;">
+        <div style="font-size:22px;margin-bottom:6px;">🎉</div>
+        <h3 style="color:var(--primary,#D4AF37);font-size:15px;margin-bottom:4px;
+                   font-family:'Orbitron',sans-serif;letter-spacing:1px;">
+          IDs ASIGNADOS — ${lista.length} PRODUCTO${lista.length > 1 ? 'S' : ''}
+        </h3>
+        <p style="color:#888;font-size:12px;">
+          Renombra tus fotos con estos IDs antes de ir al Gestor de Medios.
+        </p>
+      </div>
+      <div style="overflow-y:auto;flex:1;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#111;position:sticky;top:0;">
+              <th style="padding:10px 12px;text-align:left;color:#555;font-size:11px;
+                         letter-spacing:2px;text-transform:uppercase;font-weight:500;">Nombre</th>
+              <th style="padding:10px 12px;text-align:center;color:#555;font-size:11px;
+                         letter-spacing:2px;text-transform:uppercase;font-weight:500;">ID</th>
+            </tr>
+          </thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>
+      <div style="padding:16px 24px;border-top:1px solid #2a2520;display:flex;gap:10px;flex-shrink:0;">
+        <button onclick="
+          navigator.clipboard.writeText('${textoParaCopiar.replace(/'/g, "\\'")}')
+            .then(()=>mostrarToast('IDs copiados al portapapeles ✅','success'))
+            .catch(()=>mostrarToast('No se pudo copiar','error'));
+        " style="flex:1;padding:10px;background:var(--primary,#D4AF37);color:#1a1710;
+                 border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
+          <i class='fas fa-copy'></i> Copiar IDs
+        </button>
+        <button onclick="cambiarTab('medios');document.getElementById('modalIDsImportados').remove();"
+                style="flex:1;padding:10px;background:transparent;color:var(--primary,#D4AF37);
+                       border:1.5px solid var(--primary,#D4AF37);border-radius:8px;
+                       font-weight:700;font-size:13px;cursor:pointer;">
+          <i class='fas fa-images'></i> Ir a Medios
+        </button>
+        <button onclick="document.getElementById('modalIDsImportados').remove()"
+                style="padding:10px 14px;background:transparent;color:#888;
+                       border:1px solid #444;border-radius:8px;cursor:pointer;font-size:16px;">
+          ✕
+        </button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
 }
 
 function exportarClientesExcel() {
