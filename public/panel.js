@@ -1791,3 +1791,132 @@ function reenviarSeguimiento(idPedido, nombreCliente, telCliente, tokenVista) {
     : 'https://web.whatsapp.com/send?text=' + msg;
   window.open(waUrl, '_blank');
 }
+// ══════════════════════════════════════════════════════════
+// ORPHAN CLEANUP — Limpiar imágenes huérfanas de Cloudinary
+// ══════════════════════════════════════════════════════════
+async function limpiarHuerfanos() {
+  const confirmado = confirm(
+    '🧹 Limpiar Imágenes Huérfanas\n\n' +
+    'Este proceso comparará todas las imágenes en Cloudinary contra\n' +
+    'los productos en tu base de datos.\n\n' +
+    'Las imágenes que estén en Cloudinary pero ya NO pertenezcan\n' +
+    'a ningún producto serán eliminadas permanentemente.\n\n' +
+    '¿Deseas continuar?'
+  );
+  if (!confirmado) return;
+
+  mostrarToast('🔍 Analizando Cloudinary vs base de datos...', 'info');
+
+  try {
+    const res  = await fetch(`${API}/api/cloudinary`, { method: 'DELETE' });
+    const data = await res.json();
+
+    if (!data.success) {
+      mostrarToast('❌ Error: ' + (data.error || 'Error desconocido'), 'error');
+      return;
+    }
+
+    // Mostrar reporte en modal
+    mostrarReporteHuerfanos(data);
+
+  } catch(e) {
+    mostrarToast('❌ Error de conexión: ' + e.message, 'error');
+  }
+}
+
+function mostrarReporteHuerfanos(data) {
+  // Si no hubo huérfanas
+  if (data.huerfanas === 0) {
+    const modal = document.createElement('div');
+    modal.style.cssText =
+      'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.85);' +
+      'display:flex;align-items:center;justify-content:center;padding:16px;';
+    modal.innerHTML = `
+      <div style="background:#1a1710;border:1.5px solid #4caf50;border-radius:16px;
+                  width:100%;max-width:420px;padding:32px;text-align:center;">
+        <div style="font-size:48px;margin-bottom:12px;">✅</div>
+        <h3 style="color:#4caf50;font-family:'Orbitron',sans-serif;font-size:15px;
+                   letter-spacing:1px;margin-bottom:8px;">CLOUDINARY LIMPIO</h3>
+        <p style="color:#888;font-size:13px;line-height:1.6;">
+          Se analizaron <strong style="color:#ddd;">${data.total_cloud}</strong> imágenes en Cloudinary<br>
+          y <strong style="color:#ddd;">${data.total_db}</strong> URLs en la base de datos.<br><br>
+          No se encontraron imágenes huérfanas.
+        </p>
+        <button onclick="this.closest('[style]').remove()"
+                style="margin-top:20px;width:100%;padding:11px;background:#4caf50;color:#fff;
+                       border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
+          Cerrar
+        </button>
+      </div>`;
+    document.body.appendChild(modal);
+    return;
+  }
+
+  // Reporte con huérfanas encontradas
+  const detalleErrores = (data.detalle_error || []).map(e =>
+    `<tr>
+      <td style="padding:5px 8px;border-bottom:1px solid #222;font-size:11px;color:#bbb;">
+        ${e.id}
+      </td>
+      <td style="padding:5px 8px;border-bottom:1px solid #222;font-size:11px;color:#c62828;">
+        ${e.razon}
+      </td>
+    </tr>`
+  ).join('');
+
+  const modal = document.createElement('div');
+  modal.style.cssText =
+    'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.85);' +
+    'display:flex;align-items:center;justify-content:center;padding:16px;';
+
+  modal.innerHTML = `
+    <div style="background:#1a1710;border:1.5px solid var(--primary,#D4AF37);border-radius:16px;
+                width:100%;max-width:520px;max-height:85vh;display:flex;flex-direction:column;">
+      <div style="padding:20px 24px 16px;border-bottom:1px solid #333;flex-shrink:0;">
+        <h3 style="color:var(--primary,#D4AF37);font-family:'Orbitron',sans-serif;
+                   font-size:14px;letter-spacing:1px;margin-bottom:12px;">
+          🧹 REPORTE ORPHAN CLEANUP
+        </h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:4px;">
+          <div style="text-align:center;background:#111;border-radius:8px;padding:10px;">
+            <div style="font-size:18px;font-weight:700;color:#aaa;">${data.total_cloud}</div>
+            <div style="font-size:10px;color:#555;">En Cloudinary</div>
+          </div>
+          <div style="text-align:center;background:#111;border-radius:8px;padding:10px;">
+            <div style="font-size:18px;font-weight:700;color:#aaa;">${data.total_db}</div>
+            <div style="font-size:10px;color:#555;">En base datos</div>
+          </div>
+          <div style="text-align:center;background:#0d2918;border-radius:8px;padding:10px;">
+            <div style="font-size:18px;font-weight:700;color:#4caf50;">${data.eliminadas}</div>
+            <div style="font-size:10px;color:#888;">✅ Eliminadas</div>
+          </div>
+          <div style="text-align:center;background:#2d0d0d;border-radius:8px;padding:10px;">
+            <div style="font-size:18px;font-weight:700;color:#c62828;">${data.errores}</div>
+            <div style="font-size:10px;color:#888;">❌ Con error</div>
+          </div>
+        </div>
+      </div>
+
+      ${data.errores > 0 ? `
+      <div style="overflow-y:auto;flex:1;padding:8px 0;">
+        <p style="padding:8px 16px;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">
+          Errores al eliminar:
+        </p>
+        <table style="width:100%;border-collapse:collapse;">${detalleErrores}</table>
+      </div>` : `
+      <div style="padding:20px;text-align:center;color:#888;font-size:13px;">
+        <p>Se eliminaron <strong style="color:#4caf50;">${data.eliminadas}</strong> imagen(es) huérfana(s) correctamente.</p>
+        <p style="margin-top:8px;font-size:12px;">Cloudinary ahora solo contiene imágenes vinculadas a productos activos.</p>
+      </div>`}
+
+      <div style="padding:16px 24px;border-top:1px solid #333;flex-shrink:0;">
+        <button onclick="this.closest('[style*=fixed]').remove()"
+                style="width:100%;padding:11px;background:var(--primary,#D4AF37);color:#1a1710;
+                       border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
+          Cerrar Reporte
+        </button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+}

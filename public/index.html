@@ -184,6 +184,10 @@
             <button class="btn" onclick="descargarPlantillaProductos()" title="Descarga la plantilla Excel para llenar y luego importar"><i class="fas fa-download"></i> Plantilla</button>
             <button class="btn btn-success" onclick="document.getElementById('inputImportarExcel').click()" title="Importar productos desde Excel"><i class="fas fa-upload"></i> Importar</button>
             <input type="file" id="inputImportarExcel" accept=".xls,.xlsx,.csv" style="display:none" onchange="importarProductosDesdeExcel(this)">
+            <button class="btn" onclick="limpiarHuerfanos()" title="Eliminar imágenes de Cloudinary sin producto asignado"
+                    style="border-color:#e65100;color:#e65100;">
+              <i class="fas fa-broom"></i> Limpiar Huérfanos
+            </button>
           </div>
         </div>
         <div class="products-grid" id="gridProductos"></div>
