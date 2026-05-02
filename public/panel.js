@@ -5,6 +5,40 @@
 
 const API = '';  // mismo origen, rutas relativas
 
+// ── SEGURIDAD — Token de acceso ────────────────────────────
+// 1. Capturar token de la URL (?token=...) si viene en el link
+(function capturarToken() {
+  const params = new URLSearchParams(window.location.search);
+  const tokenURL = params.get('token');
+  if (tokenURL) {
+    localStorage.setItem('admin_token', tokenURL);
+    // Limpiar el token de la barra de direcciones
+    params.delete('token');
+    const nuevaURL = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+    window.history.replaceState({}, '', nuevaURL);
+  }
+})();
+
+// 2. Leer token guardado
+function getAdminToken() {
+  return localStorage.getItem('admin_token') || '';
+}
+
+// 3. Override global del fetch — agrega Authorization en todas las llamadas a /api/dashboard/
+const _fetchOriginal = window.fetch.bind(window);
+window.fetch = function(url, options = {}) {
+  if (typeof url === 'string' && url.includes('/api/dashboard/')) {
+    const token = getAdminToken();
+    if (token) {
+      options.headers = {
+        ...(options.headers || {}),
+        'Authorization': 'Bearer ' + token,
+      };
+    }
+  }
+  return _fetchOriginal(url, options);
+};
+
 // ── ESTADO GLOBAL ─────────────────────────────────────────
 let pedidosOriginales   = [];
 let productosOriginales = [];

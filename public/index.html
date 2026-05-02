@@ -3,6 +3,39 @@
 <head>
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#1C1A16">
+
+  <!-- ★ SEGURIDAD — Verificar token ANTES de cargar el panel -->
+  <script>
+    (function verificarAcceso() {
+      const params        = new URLSearchParams(window.location.search);
+      const tokenURL      = params.get('token');
+      const tokenGuardado = localStorage.getItem('admin_token');
+
+      if (tokenURL) {
+        localStorage.setItem('admin_token', tokenURL);
+        params.delete('token');
+        const nuevaURL = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        window.history.replaceState({}, '', nuevaURL);
+        return;
+      }
+
+      if (!tokenGuardado) {
+        document.addEventListener('DOMContentLoaded', function() {
+          document.body.style.cssText =
+            'margin:0;background:#0d0b09;display:flex;align-items:center;' +
+            'justify-content:center;min-height:100vh;font-family:Arial,sans-serif;';
+          document.body.innerHTML =
+            '<div style="text-align:center;padding:40px;">' +
+              '<div style="font-size:56px;margin-bottom:16px;">🔒</div>' +
+              '<h2 style="color:#D4AF37;font-size:20px;margin-bottom:8px;letter-spacing:2px;">ACCESO RESTRINGIDO</h2>' +
+              '<p style="color:#888;font-size:14px;line-height:1.6;">Necesitas un link de acceso válido para entrar al panel.</p>' +
+              '<p style="color:#555;font-size:12px;margin-top:16px;">Contacta al administrador del sistema.</p>' +
+            '</div>';
+        });
+      }
+    })();
+  </script>
+
   <script>if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
   <meta charset="UTF-8">
   <meta name="theme-color" content="#FFD700">
