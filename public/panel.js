@@ -242,14 +242,22 @@ function renderizarTablaClientes(lista) {
 
 // ── TEMPORAL ──────────────────────────────────────────────
 async function cargarTemporal() {
-  const f = filtrosFecha.temporal;
-  const params = new URLSearchParams({ filtro: f.tipo });
-  if (f.tipo === 'rango') { params.set('desde', f.desde); params.set('hasta', f.hasta); }
+  try {
+    // Si la pestaña temporal está comentada, el canvas no existe — salir silenciosamente
+    if (!document.getElementById('chartVentasDiarias')) return;
 
-  const res  = await fetch(`${API}/api/dashboard/temporal?${params}`);
-  const data = await res.json();
-  if (!data.success) return;
-  renderizarTemporal(data.dias || []);
+    const f = filtrosFecha.temporal;
+    const params = new URLSearchParams({ filtro: f.tipo });
+    if (f.tipo === 'rango') { params.set('desde', f.desde); params.set('hasta', f.hasta); }
+
+    const res  = await fetch(`${API}/api/dashboard/temporal?${params}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.success) return;
+    renderizarTemporal(data.dias || []);
+  } catch(e) {
+    console.warn('Temporal no disponible:', e.message);
+  }
 }
 
 // ── PEDIDOS ───────────────────────────────────────────────
