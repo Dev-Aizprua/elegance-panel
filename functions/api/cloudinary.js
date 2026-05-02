@@ -168,46 +168,41 @@ export async function onRequestDelete(context) {
       });
     }
 
-    // ── Paso 4: Eliminar huérfanas de Cloudinary ──────────
-    const publicIds  = huerfanas.map(img => img.public_id);
+    // ── Paso 4: Eliminar huérfanas una por una ─────────────
+    // Cloudinary plan gratuito no tiene endpoint masivo — se elimina con /destroy
     const eliminadas = [];
     const errores    = [];
 
-    // Cloudinary permite eliminar hasta 100 por lote
-    for (let i = 0; i < publicIds.length; i += 100) {
-      const lote = publicIds.slice(i, i + 100);
+    for (const img of huerfanas) {
+      try {
+        const timestamp = Math.floor(Date.now() / 1000);
+        const toSign    = `public_id=${img.public_id}&timestamp=${timestamp}${API_SECRET}`;
 
-      // Generar firma para delete
-      const timestamp = Math.floor(Date.now() / 1000);
-      const toSign    = `public_ids[]=${lote.join('&public_ids[]=')}&timestamp=${timestamp}${API_SECRET}`;
+        // SHA-1 con Web Crypto
+        const encoded    = new TextEncoder().encode(toSign);
+        const hashBuffer = await crypto.subtle.digest('SHA-1', encoded);
+        const hashArray  = Array.from(new Uint8Array(hashBuffer));
+        const signature  = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-      // Usar crypto para SHA1
-      const encoder = new TextEncoder();
-      const keyData = encoder.encode(toSign);
-      const hashBuffer = await crypto.subtle.digest('SHA-1', keyData);
-      const hashArray  = Array.from(new Uint8Array(hashBuffer));
-      const signature  = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        const formData = new FormData();
+        formData.append('public_id', img.public_id);
+        formData.append('timestamp', timestamp);
+        formData.append('api_key',   API_KEY);
+        formData.append('signature', signature);
 
-      const formData = new FormData();
-      lote.forEach(id => formData.append('public_ids[]', id));
-      formData.append('timestamp', timestamp);
-      formData.append('api_key',   API_KEY);
-      formData.append('signature', signature);
-
-      const delRes = await fetch(
-        `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/destroy_all`,
-        { method: 'POST', body: formData }
-      );
-
-      if (delRes.ok) {
+        const delRes  = await fetch(
+          `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/destroy`,
+          { method: 'POST', body: formData }
+        );
         const delData = await delRes.json();
-        // Cloudinary devuelve deleted: { public_id: 'deleted' } o 'not_found'
-        Object.entries(delData.deleted || {}).forEach(([id, status]) => {
-          if (status === 'deleted') eliminadas.push(id);
-          else errores.push({ id, razon: status });
-        });
-      } else {
-        lote.forEach(id => errores.push({ id, razon: 'Error HTTP ' + delRes.status }));
+
+        if (delData.result === 'ok') {
+          eliminadas.push(img.public_id);
+        } else {
+          errores.push({ id: img.public_id, razon: delData.result || 'error desconocido' });
+        }
+      } catch(e) {
+        errores.push({ id: img.public_id, razon: e.message });
       }
     }
 
