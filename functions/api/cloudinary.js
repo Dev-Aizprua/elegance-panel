@@ -68,21 +68,33 @@ export async function onRequestGet(context) {
   try {
     const CLOUD_NAME = 'doaqu6s6c';
     const API_KEY    = '978137972327483';
-    // El secret se pone como variable de entorno en Cloudflare
     const API_SECRET = context.env.CLOUDINARY_SECRET || '';
+    const auth       = btoa(`${API_KEY}:${API_SECRET}`);
 
-    const auth    = btoa(`${API_KEY}:${API_SECRET}`);
-    const res     = await fetch(
-      `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources/image/upload?prefix=${carpeta}&max_results=1`,
-      { headers: { 'Authorization': `Basic ${auth}` } }
-    );
+    // Contar paginando todas las imágenes de la carpeta
+    let total      = 0;
+    let nextCursor = null;
 
-    if (!res.ok) {
-      return Response.json({ success: true, total: 0, limite: 200 });
-    }
+    do {
+      const qs = new URLSearchParams({
+        prefix:      carpeta,
+        max_results: '500',
+        resource_type: 'image',
+        ...(nextCursor ? { next_cursor: nextCursor } : {}),
+      });
 
-    const data  = await res.json();
-    const total = data.total_count || 0;
+      const res = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/resources/image/upload?${qs}`,
+        { headers: { Authorization: `Basic ${auth}` } }
+      );
+
+      if (!res.ok) break;
+
+      const data = await res.json();
+      total     += (data.resources || []).length;
+      nextCursor = data.next_cursor || null;
+
+    } while (nextCursor);
 
     return Response.json({ success: true, total, limite: 200 });
 
